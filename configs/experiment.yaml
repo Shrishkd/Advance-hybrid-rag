@@ -29,7 +29,15 @@ experiment:
 # ───────────────────────────────────────────────────────────────────────
 corpus:
   raw_dir: data/raw
-  parser: pymupdf              # [PRIOR] pymupdf | pdfplumber | pypdf
+  parser: pymupdf              # [PROVEN] reports/01b_parser_decision.md
+                               # pymupdf | pymupdf_sorted | pdfplumber | pypdf
+                               # pdfplumber DISQUALIFIED: collapses word boundaries
+                               #   (forthecancertreatmentproblem) + (cid:N) leakage,
+                               #   and recovers 0 TOC entries.
+                               # pypdf: single_char_token_ratio 0.48 on Goodfellow
+                               #   (equation shatter) vs 0.17 for pymupdf.
+                               # pymupdf_sorted: +1.02% score = inside the 3% noise
+                               #   band, but +24% slower. Tie-break chose speed.
   use_embedded_toc: true       # extract real chapter/section tree from PDF
   strip_headers_footers: true
   dehyphenate: true            # rejoin "gra-\ndient" -> "gradient"

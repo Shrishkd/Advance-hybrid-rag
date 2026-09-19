@@ -1,0 +1,31 @@
+# ═══════════════════════════════════════════════════════════════
+# BASE - Phases 0-3 (config, PDF parsing, chunking, golden set)
+#   pip install -r requirements/base.txt
+#
+# Deliberately light. No torch, no LangChain yet. Phase 1 is about
+# getting text out of PDFs correctly - nothing else is needed for that,
+# and installing more now just adds conflicts to debug later.
+# ═══════════════════════════════════════════════════════════════
+
+# --- Config & plumbing ---
+pyyaml==6.0.2
+python-dotenv==1.0.1
+pydantic==2.9.2
+
+# --- PDF parsing: the three candidates we benchmark in Phase 1 ---
+pymupdf==1.24.11          # fast C-backed; also exposes get_toc() for the
+                          # embedded chapter/section tree. Prior favourite.
+pdfplumber==0.11.4        # slower, but best-in-class table/layout geometry
+pypdf==5.1.0              # pure python baseline; the "naive" comparison point
+
+# --- Tokenization (chunk_size is measured in TOKENS, not characters) ---
+tiktoken==0.8.0
+
+# --- Reporting & CLI ---
+tqdm==4.66.5
+pandas==2.2.3             # benchmark tables -> markdown reports
+rich==13.9.2              # readable terminal output
+tabulate==0.9.0           # pandas -> markdown
+
+# --- Dev ---
+pytest==8.3.3
