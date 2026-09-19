@@ -1,0 +1,90 @@
+# ─────────────────────────────────────────────────────────────
+# Corpus — NEVER commit
+# These are copyrighted textbooks. Keep them local; do not commit
+# the PDFs or any full text extracted from them.
+# ─────────────────────────────────────────────────────────────
+data/raw/**
+!data/raw/.gitkeep
+data/processed/**
+!data/processed/.gitkeep
+data/chunks/**
+!data/chunks/.gitkeep
+
+# Golden dataset IS committed — it is our benchmark, small and hand-made.
+!data/golden/
+!data/golden/**
+
+# ─────────────────────────────────────────────────────────────
+# Build artifacts: indexes, vectors, caches
+# Regenerable from data/raw + configs. Large. Never commit.
+# ─────────────────────────────────────────────────────────────
+*.faiss
+*.index
+*.npy
+*.npz
+chroma_db/
+.chroma/
+storage/
+.cache/
+models/
+
+# ─────────────────────────────────────────────────────────────
+# Secrets
+# ─────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.key
+credentials.json
+
+# ─────────────────────────────────────────────────────────────
+# Evaluation
+# results.db is the regression store — COMMIT it, it is the
+# project's memory of every benchmark run.
+# ─────────────────────────────────────────────────────────────
+evaluation/.deepeval*
+.deepeval*
+temp_test_run_data.json
+!evaluation/results.db
+
+# Chat memory checkpoints are per-session runtime state, not results.
+*.sqlite
+*.sqlite3
+memory.db
+checkpoints.db
+
+# ─────────────────────────────────────────────────────────────
+# Python
+# ─────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# ─────────────────────────────────────────────────────────────
+# Editors / OS
+# ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ─────────────────────────────────────────────────────────────
+# MD
+# ─────────────────────────────────────────────────────────────
+CLAUDE.md

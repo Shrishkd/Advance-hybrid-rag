@@ -1,0 +1,192 @@
+# ═══════════════════════════════════════════════════════════════════════
+# THE SWITCHBOARD
+#
+# Every architectural question this project asks is a value in this file.
+# Change ONE value -> rerun -> get ONE new row in the benchmark table.
+#
+# RULES
+#   1. One variable at a time. Two changes at once = a confounded,
+#      worthless comparison.
+#   2. Every non-default value must eventually point at a report in
+#      reports/ that justifies it. Until then it is an ASSUMPTION.
+#   3. This file is hashed into evaluation/results.db. The hash is how a
+#      score is traced back to the exact configuration that produced it.
+#
+# STATUS LEGEND (update as evidence arrives):
+#   [UNTESTED] - a guess. Default value, no evidence yet.
+#   [PRIOR]    - Claude expects this to win. Still a guess.
+#   [PROVEN]   - backed by numbers in reports/NN_*.md
+# ═══════════════════════════════════════════════════════════════════════
+
+experiment:
+  name: baseline
+  notes: "Phase 0 defaults. Nothing here is proven yet."
+
+# ───────────────────────────────────────────────────────────────────────
+# CORPUS + PARSING                            decided in Phase 1
+# Garbage extraction cannot be rescued downstream. This is the ceiling
+# on everything below it.
+# ───────────────────────────────────────────────────────────────────────
+corpus:
+  raw_dir: data/raw
+  parser: pymupdf              # [PRIOR] pymupdf | pdfplumber | pypdf
+  use_embedded_toc: true       # extract real chapter/section tree from PDF
+  strip_headers_footers: true
+  dehyphenate: true            # rejoin "gra-\ndient" -> "gradient"
+
+# ───────────────────────────────────────────────────────────────────────
+# CHUNKING                                    decided in Phase 4.2
+# Your question: "recursive or semantic or parent-child?"
+# Answer: all three get built, the benchmark picks.
+# ───────────────────────────────────────────────────────────────────────
+chunking:
+  strategy: recursive          # [UNTESTED] recursive | semantic | parent_child
+  size_unit: tokens            # tokens | chars  (tokens is the honest unit)
+  chunk_size: 512
+  chunk_overlap: 64            # ~12%. Overlap protects ideas that straddle a boundary.
+  respect_section_bounds: true # never split across a TOC section boundary
+
+  semantic:
+    breakpoint_percentile: 95  # split where consecutive-sentence similarity drops
+    buffer_size: 1
+
+  parent_child:                # [PRIOR] retrieve small, feed large
+    child_size: 256            # what gets EMBEDDED and searched (precision)
+    parent_size: 2048          # what gets SENT to the LLM (context)
+
+# ───────────────────────────────────────────────────────────────────────
+# EMBEDDING                                   decided in Phase 4.1
+# Your question: "OpenAI + one other, MTEB pick best."
+# Adjusted: MTEB is a prior filter, not an answer. Our golden set decides.
+# ───────────────────────────────────────────────────────────────────────
+embedding:
+  model: nomic                 # [UNTESTED] nomic | bge-m3 | embeddinggemma | mxbai | openai-3-small
+  batch_size: 16               # small: 7.4GB RAM
+  normalize: true              # required for cosine-via-inner-product
+
+# ───────────────────────────────────────────────────────────────────────
+# ANN INDEX                                   decided in Phase 4.3
+# Your question: "HNSW, IVF, PQ or hybrid search?"
+# CORRECTION: ANN and hybrid are ORTHOGONAL. This block is ANN only -
+# how to search dense vectors fast. Hybrid is the next block down.
+# [PRIOR] at ~50k chunks, flat exact search wins. Prove it, don't assume it.
+# ───────────────────────────────────────────────────────────────────────
+index:
+  type: flat                   # [PRIOR] flat | hnsw | ivf | ivfpq
+  metric: ip                   # inner product (== cosine on normalized vectors)
+
+  hnsw:                        # graph-based: fast, high recall, high RAM
+    M: 32
+    ef_construction: 200
+    ef_search: 64
+  ivf:                         # cluster-based: cheap, needs training
+    nlist: 256
+    nprobe: 16
+  ivfpq:                       # IVF + compression: tiny RAM, lossy
+    nlist: 256
+    m: 64                      # sub-quantizers (must divide embedding dim)
+    nbits: 8
+    nprobe: 16
+
+# ───────────────────────────────────────────────────────────────────────
+# RETRIEVAL                                   decided in Phase 4.4
+# THIS is hybrid search: which SIGNALS we retrieve with.
+# [PRIOR] hybrid wins clearly - textbooks are full of exact terms
+# (ReLU, Adam, BLEU) that embeddings blur but BM25 nails.
+# ───────────────────────────────────────────────────────────────────────
+retrieval:
+  mode: dense                  # [UNTESTED] dense | bm25 | hybrid_rrf | hybrid_weighted
+  top_k: 20                    # candidates fetched BEFORE reranking
+  rrf_k: 60                    # RRF smoothing constant (60 is the paper default)
+  weights:                     # used only by hybrid_weighted
+    dense: 0.5
+    sparse: 0.5
+
+# ───────────────────────────────────────────────────────────────────────
+# RERANKING                                   decided in Phase 4.5
+# [PRIOR] biggest single quality win per unit effort. Cross-encoders see
+# query and document TOGETHER; bi-encoders never do.
+# ───────────────────────────────────────────────────────────────────────
+rerank:
+  model: none                  # [UNTESTED] none | minilm-l6 | bge-v2-m3
+  top_n: 5                     # survivors passed to the generator
+
+# ───────────────────────────────────────────────────────────────────────
+# QUERY TRANSFORMATION                        decided in Phase 6
+# [PRIOR] HyDE probably LOSES here. It shines in zero-shot/low-resource
+# domains; our corpus is canonical ML text that already embeds well.
+# A clean negative result is a real result and ships in the README.
+# ───────────────────────────────────────────────────────────────────────
+transform:
+  mode: none                   # [UNTESTED] none | rewrite | expansion | hyde
+  n_queries: 3                 # multi-query expansion fan-out
+  model_role: tiny             # resolved via models.yaml graders
+
+# ───────────────────────────────────────────────────────────────────────
+# RAG CONTROL FLOW                            decided in Phase 6
+# Your question: "CRAG, Self-RAG, multi-hop or adaptive?"
+# CORRECTION: these are not 4 pipelines. They are CONTROL FLOW over one
+# retrieval core. One LangGraph, toggleable nodes, measured by ablation.
+# ───────────────────────────────────────────────────────────────────────
+graph:
+  type: naive                  # [UNTESTED] naive | crag | self_rag | adaptive
+  grader_role: tiny            # graders stay LOCAL - cost control
+  max_retries: 2               # cycle guard: without this, self-correction loops forever
+  crag:
+    relevance_threshold: 0.5
+    fallback_on_fail: rewrite  # rewrite | broaden | refuse
+  self_rag:
+    check_groundedness: true
+    check_answer_relevance: true
+  multihop:
+    max_hops: 3
+
+# ───────────────────────────────────────────────────────────────────────
+# GENERATION                                  decided in Phase 5
+# ───────────────────────────────────────────────────────────────────────
+generation:
+  model_role: llama3.2-3b      # [UNTESTED] key in models.yaml 'generators', or cloud
+  temperature: 0.0             # deterministic: required for reproducible evals
+  max_tokens: 1024
+  require_citations: true      # answers must cite book/chapter/page
+  context_budget_tokens: 6000
+
+# ───────────────────────────────────────────────────────────────────────
+# MEMORY                                      decided in Phase 6
+# CORRECTION: ConversationBufferMemory is deprecated, AND buffering is
+# not the real problem. "why does it work better?" is unretrievable until
+# it is condensed into a standalone question. Without condense_query,
+# multi-turn RAG silently dies on turn 2.
+# ───────────────────────────────────────────────────────────────────────
+memory:
+  enabled: true
+  backend: sqlite_saver        # LangGraph checkpointer
+  max_turns: 6                 # trim window
+  condense_query: true         # <- the load-bearing setting
+
+# ───────────────────────────────────────────────────────────────────────
+# GUARDRAILS                                  decided in Phase 7
+# All default OFF so we can measure what each one COSTS (latency, false
+# refusals) as well as what it buys.
+# ───────────────────────────────────────────────────────────────────────
+guardrails:
+  input:
+    prompt_injection: false
+    toxicity: false
+    scope_adherence: false     # is this even an ML/NLP question?
+  output:
+    groundedness: false        # refuse rather than hallucinate
+    pii_leakage: false
+    toxicity: false
+
+# ───────────────────────────────────────────────────────────────────────
+# EVALUATION                                  Phase 8
+# ───────────────────────────────────────────────────────────────────────
+evaluation:
+  golden_set: data/golden/golden_50.jsonl
+  synthetic_set: data/golden/synthetic_retrieval.jsonl
+  judge_role: judge            # -> gpt-oss:120b-cloud via models.yaml
+  cache_llm_calls: true        # free tier is rate-limited; never pay twice
+                               # for an identical prompt
+  results_db: evaluation/results.db
+  regression_threshold: 0.05   # fail the run if a metric drops > 5 points

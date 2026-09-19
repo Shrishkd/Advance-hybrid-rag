@@ -1,0 +1,179 @@
+# ═══════════════════════════════════════════════════════════════════════
+# MODEL REGISTRY
+#
+# Code never hardcodes a model name. Code asks for a ROLE; this file
+# resolves the role to a concrete model. Swapping a model = editing one
+# line here, not grepping the codebase.
+#
+# All facts below were VERIFIED against the live Ollama catalog on
+# 2026-09-19 (see reports/00_environment.md). Cloud models REQUIRE the
+# ':cloud' suffix - 'glm-5.3' resolves to a local tag and fails.
+# ═══════════════════════════════════════════════════════════════════════
+
+hardware:
+  # Every model choice is constrained by this. ~5.5 GB usable for a model.
+  ram_total_gb: 7.4
+  ram_usable_gb: 5.5
+  gpu: none                 # Ryzen 5 5600H, no CUDA
+  models_dir: D:\ollama-models
+
+# ───────────────────────────────────────────────────────────────────────
+# CLOUD  (Ollama Cloud - free tier)
+#
+# VERIFIED FREE : gpt-oss:20b-cloud, gpt-oss:120b-cloud
+# VERIFIED PAID : glm-5.3*, glm-5.1, kimi-k3, kimi-k2.6, deepseek-v4*
+#                 -> all return 402 Payment Required on this account.
+# RETIRED       : qwen3-coder:480b, minimax-m2
+#
+# CAUTION: gpt-oss emits visible reasoning traces
+#   ("Thinking... ...done thinking.")
+# These MUST be stripped before an answer is scored, or the judge
+# evaluates the model's scratchpad instead of its answer.
+# ───────────────────────────────────────────────────────────────────────
+cloud:
+  provider: ollama_cloud
+  free_tier_only: true
+  strip_reasoning: true     # non-negotiable for gpt-oss
+
+  judge:
+    name: gpt-oss:120b-cloud
+    why: >
+      Strongest free model available. The judge must be far more capable
+      than what it judges, or every eval score is noise dressed as data.
+    # SELF-PREFERENCE RULE: the judge must never be the model that wrote
+    # the answer. Generators under test are llama/qwen/gemma (local) and
+    # gpt-oss:20b. The gpt-oss:20b row is the ONE same-family case and
+    # must carry a caveat in the report.
+    forbidden_as_generator: true
+
+  bulk:
+    name: gpt-oss:20b-cloud
+    why: >
+      Cheap high-volume work: Phase 3 synthetic question generation and
+      any grading too voluminous for the local tiny models.
+
+# ───────────────────────────────────────────────────────────────────────
+# LOCAL EMBEDDERS  (Phase 4 bake-off candidates)
+#
+# PREFIX GOTCHA: asymmetric models need different prefixes for queries vs
+# documents. Getting this wrong silently costs 10-20% recall with NO
+# error message. The prefix belongs to the model, so it lives here.
+# ───────────────────────────────────────────────────────────────────────
+embedders:
+  nomic:
+    name: nomic-embed-text
+    dim: 768
+    size_gb: 0.27
+    max_ctx: 8192
+    query_prefix: "search_query: "
+    doc_prefix: "search_document: "
+    why: Fast CPU baseline. Matryoshka dims. The speed reference point.
+
+  bge-m3:
+    name: bge-m3
+    dim: 1024
+    size_gb: 1.2
+    max_ctx: 8192
+    query_prefix: ""
+    doc_prefix: ""
+    why: >
+      Emits dense + sparse + ColBERT vectors from ONE model - hybrid
+      search without running two systems. Prime candidate.
+    note: Ollama exposes dense only; sparse/ColBERT need FlagEmbedding (Colab).
+
+  embeddinggemma:
+    name: embeddinggemma
+    dim: 768
+    size_gb: 0.62
+    max_ctx: 2048
+    query_prefix: "task: search result | query: "
+    doc_prefix: "title: none | text: "
+    why: Strong small-model MTEB scores. Note the short context window.
+
+  mxbai:
+    name: mxbai-embed-large
+    dim: 1024
+    size_gb: 0.67
+    max_ctx: 512
+    query_prefix: "Represent this sentence for searching relevant passages: "
+    doc_prefix: ""
+    why: Strong retrieval scores; 512-token ctx constrains chunk size.
+
+  # Pluggable, not currently active - no API key. One line to enable.
+  openai-3-small:
+    name: text-embedding-3-small
+    provider: openai
+    dim: 1536
+    enabled: false
+    why: ~$0.05 for this entire corpus. Enable if a key becomes available.
+
+# ───────────────────────────────────────────────────────────────────────
+# LOCAL GRADERS / ROUTERS
+#
+# These do CLASSIFICATION, not generation: "is this doc relevant? y/n",
+# "route: simple|multihop|none". A 0.6B model is genuinely fine at this.
+# Using a big model here is how a 50-question eval becomes an overnight job.
+# ───────────────────────────────────────────────────────────────────────
+graders:
+  tiny:
+    name: qwen3:0.6b
+    size_gb: 0.5
+    why: Default grader. Cheapest thing that can follow a binary instruction.
+  small:
+    name: llama3.2:1b
+    size_gb: 1.3
+    why: Fallback if qwen3:0.6b proves unreliable on the routing task.
+
+# ───────────────────────────────────────────────────────────────────────
+# LOCAL GENERATORS  (Phase 5 bake-off candidates)
+#
+# HARD CEILING: ~4B @ Q4. An 8B Q4 model is ~5GB against 5.5GB usable -
+# it will swap to disk and drop to ~1-2 tok/s. Do not add one casually.
+# ───────────────────────────────────────────────────────────────────────
+generators:
+  llama3.2-3b:
+    name: llama3.2:3b
+    size_gb: 2.0
+    max_ctx: 131072
+    why: Strong instruction-following at 3B. The baseline to beat.
+
+  qwen3-4b:
+    name: qwen3:4b
+    size_gb: 2.5
+    max_ctx: 40960
+    why: Hybrid reasoning mode. Strong on technical content.
+
+  gemma3-4b:
+    name: gemma3:4b
+    size_gb: 3.3
+    max_ctx: 131072
+    why: Different family - guards against family-specific quirks.
+
+  phi4-mini:
+    name: phi4-mini
+    size_gb: 2.5
+    max_ctx: 131072
+    why: Trained heavily on textbook-style data. Plausible fit for this corpus.
+
+# ───────────────────────────────────────────────────────────────────────
+# RERANKERS  (Phase 4 - expected biggest single quality win)
+# Cross-encoders, run via sentence-transformers, NOT Ollama.
+# ───────────────────────────────────────────────────────────────────────
+rerankers:
+  minilm-l6:
+    name: cross-encoder/ms-marco-MiniLM-L-6-v2
+    params_m: 22
+    why: Tiny and fast enough for CPU serving. The latency reference point.
+  bge-v2-m3:
+    name: BAAI/bge-reranker-v2-m3
+    params_m: 568
+    why: Much stronger, much slower on CPU. Benchmark on Colab first.
+
+# ───────────────────────────────────────────────────────────────────────
+# SAFETY
+# ───────────────────────────────────────────────────────────────────────
+safety:
+  guard:
+    name: llama-guard3:1b
+    size_gb: 1.6
+    why: Purpose-built safety classifier for Phase 7 input/output screening.
