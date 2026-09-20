@@ -66,7 +66,13 @@ class TocEntry:
     """
     level: int             # 1 = chapter, 2 = section, 3 = subsection...
     title: str
-    page: int              # 1-indexed, as PDF outlines store it
+    page: int              # 0-INDEXED physical page, matching extract_page().
+                           # PDF outlines natively store 1-indexed pages; every
+                           # adapter below converts on the way out so that ONE
+                           # page convention exists across the codebase.
+                           # Mixing the two puts every citation one page off -
+                           # too small to notice in testing, wrong in every
+                           # citation we ever emit.
     children: list["TocEntry"] = field(default_factory=list)
 
 
@@ -138,9 +144,10 @@ class PyMuPDFParser:
         import fitz
         try:
             with fitz.open(path) as doc:
-                # get_toc() -> [[level, title, page], ...]
+                # get_toc() -> [[level, title, page], ...] with 1-indexed pages.
+                # Subtract 1 to match extract_page()'s 0-indexed convention.
                 return [
-                    TocEntry(level=lvl, title=title.strip(), page=page)
+                    TocEntry(level=lvl, title=title.strip(), page=max(0, page - 1))
                     for lvl, title, page in doc.get_toc(simple=True)
                 ]
         except Exception:                           # noqa: BLE001
@@ -231,7 +238,8 @@ class PyPdfParser:
                         walk(item, level + 1)       # nested sub-outline
                     else:
                         try:
-                            page = reader.get_destination_page_number(item) + 1
+                            # Already 0-indexed in pypdf; no conversion needed.
+                            page = reader.get_destination_page_number(item)
                         except Exception:           # noqa: BLE001
                             continue
                         entries.append(

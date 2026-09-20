@@ -41,6 +41,19 @@ corpus:
   use_embedded_toc: true       # extract real chapter/section tree from PDF
   strip_headers_footers: true
   dehyphenate: true            # rejoin "gra-\ndient" -> "gradient"
+  detect_page_offset: true     # physical page index -> PRINTED page number, else every
+                               # citation is wrong by a constant ~10-30 pages
+  preserve_equations: true     # [DECIDED by Shrish - a judgment call, not a benchmark]
+                               # Keep mathematical content as extracted rather than
+                               # stripping equation-like lines.
+                               # Rationale: on THIS corpus the equations ARE the content.
+                               # Bishop and Goodfellow are largely mathematical argument,
+                               # and "what is the closed-form solution for ridge
+                               # regression?" is unanswerable if we deleted the formula.
+                               # COST, accepted knowingly: equations extract as partially
+                               # fragmented text, so some chunks carry noise that depresses
+                               # alpha_ratio and inflates single_char_token_ratio.
+                               # We keep the noise rather than lose the content.
 
 # ───────────────────────────────────────────────────────────────────────
 # CHUNKING                                    decided in Phase 4.2
@@ -77,10 +90,15 @@ embedding:
 # Your question: "HNSW, IVF, PQ or hybrid search?"
 # CORRECTION: ANN and hybrid are ORTHOGONAL. This block is ANN only -
 # how to search dense vectors fast. Hybrid is the next block down.
-# [PRIOR] at ~50k chunks, flat exact search wins. Prove it, don't assume it.
+# [PROVEN] reports/04a_ann_lab.md. Measured at 5,796 chunks: hnsw is LOSSLESS
+# (recall@10 = 1.0000) and 7.6x faster - the prior that flat "wins outright"
+# was wrong. flat is chosen anyway: the 0.9ms saving is <0.1% of end-to-end
+# latency, and flat contributes ZERO approximation error, which is required
+# while it serves as the measurement instrument for D2/D3/D5/D6.
+# Revisit at ~100k-250k chunks or if retrieval p95 > 50ms.
 # ───────────────────────────────────────────────────────────────────────
 index:
-  type: flat                   # [PRIOR] flat | hnsw | ivf | ivfpq
+  type: flat                   # [PROVEN] reports/04a_ann_lab.md (D4)
   metric: ip                   # inner product (== cosine on normalized vectors)
 
   hnsw:                        # graph-based: fast, high recall, high RAM
@@ -103,7 +121,9 @@ index:
 # (ReLU, Adam, BLEU) that embeddings blur but BM25 nails.
 # ───────────────────────────────────────────────────────────────────────
 retrieval:
-  mode: dense                  # [UNTESTED] dense | bm25 | hybrid_rrf | hybrid_weighted
+  mode: hybrid_rrf             # [PROVEN*] reports/04c_hybrid_retrieval.md (D5)
+                               # +11.8 recall@10 over dense. * PROVISIONAL:
+                               # pinned to nomic; re-run after D3 lands.
   top_k: 20                    # candidates fetched BEFORE reranking
   rrf_k: 60                    # RRF smoothing constant (60 is the paper default)
   weights:                     # used only by hybrid_weighted

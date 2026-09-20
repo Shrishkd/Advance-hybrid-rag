@@ -1,0 +1,10 @@
+# ═══════════════════════════════════════════════════════════════
+# Retrieval layer - Phase 4
+#   pip install -r requirements/retrieval.txt
+# ═══════════════════════════════════════════════════════════════
+
+faiss-cpu==1.9.0.post1    # THE reason we use FAISS: it is the only library
+                          # exposing Flat/HNSW/IVF/IVFPQ over identical
+                          # vectors, which IS experiment D4.
+rank-bm25==0.2.2          # sparse lexical retrieval; the other half of hybrid
+scikit-learn==1.5.2       # nDCG reference implementation to check ours against

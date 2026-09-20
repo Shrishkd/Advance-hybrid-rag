@@ -1,0 +1,100 @@
+# ═══════════════════════════════════════════════════════════════════════
+# CORPUS REGISTRY
+#
+# Maps a filename on disk to the metadata a CITATION needs. Without this a
+# citation reads:
+#     "Hands-On-Machine-Learning-with-Scikit-Learn-Keras&TensorFlow.pdf, p. 139"
+# With it:
+#     "Géron, Ch. 4 - Training Models, p. 139"
+#
+# `short` is what appears in citations and in golden-set ground-truth labels,
+# so it must stay STABLE. Renaming a short name invalidates every existing
+# label in data/golden/.
+#
+# `page_offset` = printed_page - physical_page. PDF outlines index physical
+# sheets; textbooks print their own numbers after front matter.
+# MEASURED 2026-09-19 by src/ingest/clean.py:detect_page_offset over 60
+# consecutive pages per book. `null` means no trustworthy global offset exists
+# - cite PHYSICAL pages for that book and label them as such.
+# ═══════════════════════════════════════════════════════════════════════
+
+books:
+  Build-a-large-language-models.pdf:
+    short: Raschka
+    title: Build a Large Language Model (From Scratch)
+    authors: [Sebastian Raschka]
+    year: 2024
+    page_offset: -21          # agreement 1.00, coverage 1.00
+    cite_pages_as: printed
+    topics: [llm, transformers, attention, pretraining, finetuning, tokenization]
+
+  deeplearningbook.pdf:
+    short: Goodfellow
+    title: Deep Learning
+    authors: [Ian Goodfellow, Yoshua Bengio, Aaron Courville]
+    year: 2016
+    page_offset: -14          # agreement 1.00, coverage 1.00
+    cite_pages_as: printed
+    topics: [deep-learning, optimization, regularization, theory, probability]
+    notes: >
+      Replaced 2026-09-19 with an edition carrying an embedded TOC (194 entries).
+      The original had none. Publisher outline contains typos - "Treands",
+      "ModernPractices", "Recurrentand" - so never exact-string-match on titles.
+
+  Designing-Machine-Learning-Systems.pdf:
+    short: Huyen
+    title: Designing Machine Learning Systems
+    authors: [Chip Huyen]
+    year: 2022
+    page_offset: null         # agreement 0.28, coverage 0.53 -> REJECTED
+    cite_pages_as: physical
+    topics: [mlops, deployment, data-engineering, monitoring, production]
+    notes: >
+      No recoverable printed page numbers. Inspection of p120/p121 edges shows
+      footnote markers ("17 18 19") where page numbers would be, and pages with
+      no trailing number at all. Cite physical PDF pages and say so.
+
+  Hands-On-Machine-Learning-with-Scikit-Learn-Keras&TensorFlow.pdf:
+    short: Géron
+    title: Hands-On Machine Learning with Scikit-Learn, Keras & TensorFlow
+    authors: [Aurélien Géron]
+    year: 2022
+    page_offset: -1           # agreement 1.00, coverage 1.00 - verified by hand:
+                              # physical p120 footer reads "Linear Regression | 119"
+    cite_pages_as: printed
+    topics: [practical-ml, scikit-learn, keras, tensorflow, neural-networks]
+
+  Pattern-Recognition-and-ML.pdf:
+    short: Bishop
+    title: Pattern Recognition and Machine Learning
+    authors: [Christopher M. Bishop]
+    year: 2006
+    page_offset: -19          # agreement 1.00, coverage 1.00
+    cite_pages_as: printed
+    topics: [bayesian, probabilistic-models, graphical-models, theory, kernels]
+
+  Speech-and-Language-Processing.pdf:
+    short: Jurafsky
+    title: Speech and Language Processing
+    authors: [Daniel Jurafsky, James H. Martin]
+    year: 2023
+    page_offset: null         # agreement 0.50, coverage 0.60 -> REJECTED
+    cite_pages_as: physical
+    topics: [nlp, parsing, semantics, speech, language-models]
+    notes: >
+      DRAFT edition that paginates PER CHAPTER - p121 header reads
+      "DRAFT / 30 / Chapter", i.e. page 30 of that chapter. No single global
+      offset exists, so rejecting it is correct rather than a detector failure.
+      Nests 4 outline levels (Part > Chapter > Section > Subsection).
+      Every page carries a "DRAFT" running head, stripped as furniture.
+
+# Slot for the personal notes PDF. Phase 2's content-hash manifest means
+# adding it later reprocesses ONLY this file, not the other six.
+#
+#  my-genai-notes.pdf:
+#    short: Notes
+#    title: Personal GenAI Notes
+#    authors: [Shrish]
+#    page_offset: 0            # personal PDFs usually have no front matter
+#    cite_pages_as: physical
+#    topics: [genai, personal]

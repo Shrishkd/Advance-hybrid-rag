@@ -1,0 +1,8 @@
+﻿# ═══════════════════════════════════════════════════════════════
+# LLM layer - Phases 3, 5, 6, 8
+#   pip install -r requirements/llm.txt
+#
+# NOTE: 0.4.x predates the 	hink parameter, which we need to
+# suppress gpt-oss reasoning on grader calls. Do not downgrade.
+# ═══════════════════════════════════════════════════════════════
+ollama==0.6.2                 # local + cloud; cloud models need a ':cloud' tag

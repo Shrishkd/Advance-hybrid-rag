@@ -233,6 +233,37 @@ class SectionIndex:
 # Reporting
 # ───────────────────────────────────────────────────────────────────────
 
+_NON_CONTENT: re.Pattern[str] = re.compile(
+    r"bibliograph|historical note|references|further reading|exercise|"
+    r"\bindex\b|acknowledg|preface|table of contents|^contents|notation|"
+    r"about the author|colophon|copyright|errata|glossary",
+    re.I,
+)
+
+
+def is_content_section(breadcrumb: list[str]) -> bool:
+    """Does this breadcrumb point at teachable content?
+
+    A non-empty breadcrumb is NOT sufficient. Bibliographies, exercise sets,
+    indexes and contents pages all carry perfectly good breadcrumbs while
+    containing nothing worth asking a question about.
+
+    Contents pages are the worst offenders for keyword search specifically:
+    they list every topic in the book, so they match EVERY query while
+    containing no actual explanation of anything.
+
+    >>> is_content_section(["5. Neural Networks", "5.2 Network Training"])
+    True
+    >>> is_content_section(["Contents"])
+    False
+    >>> is_content_section(["14 PARSING", "BIBLIOGRAPHICAL AND HISTORICAL NOTES"])
+    False
+    >>> is_content_section([])
+    False
+    """
+    return bool(breadcrumb) and not _NON_CONTENT.search(" > ".join(breadcrumb))
+
+
 def summarize(flat: list[TocEntry]) -> dict[str, int]:
     """TOC statistics for the Phase 1 report.
 
