@@ -1,6 +1,6 @@
 # Phase 4c — Retrieval Mode: dense vs BM25 vs hybrid (D5)
 
-Swept: **retrieval mode**.  Pinned: embedder `nomic` (PROVISIONAL — pending D3), chunker `recursive`, index `flat` (D4).
+Swept: **retrieval mode**.  Pinned: embedder `embeddinggemma` (PROVISIONAL — pending D3), chunker `recursive`, index `flat` (D4).
 Dataset: `synthetic_retrieval.jsonl`.
 Scored on **250 of 250** items (0 unanswerable excluded — they have no ground-truth contexts, so recall on them is 0.0 by construction and would apply a constant penalty to every row).
 
@@ -10,10 +10,10 @@ is mixed into these differences.
 
 | config          |   recall@1 |   recall@5 |   recall@10 |   recall@20 |   precision@5 |   prec@5_vs_ceiling |    mrr |   ndcg@10 |   dim |   query_ms_p50 |
 |:----------------|-----------:|-----------:|------------:|------------:|--------------:|--------------------:|-------:|----------:|------:|---------------:|
-| hybrid_weighted |      0.716 |      0.936 |       0.956 |       0.98  |        0.3232 |              0.5063 | 0.8134 |    0.8123 |   768 |        300.755 |
-| hybrid_rrf      |      0.688 |      0.916 |       0.952 |       0.984 |        0.3136 |              0.4912 | 0.7917 |    0.7958 |   768 |        305.226 |
-| bm25            |      0.692 |      0.876 |       0.92  |       0.952 |        0.3024 |              0.4737 | 0.7774 |    0.7822 |     0 |        101.132 |
-| dense           |      0.632 |      0.84  |       0.888 |       0.94  |        0.2928 |              0.4586 | 0.7226 |    0.7314 |   768 |        185.836 |
+| hybrid_weighted |      0.768 |      0.944 |       0.964 |       0.988 |        0.3504 |              0.5489 | 0.8473 |    0.8369 |   768 |        97.5935 |
+| hybrid_rrf      |      0.74  |      0.948 |       0.964 |       0.988 |        0.3416 |              0.5351 | 0.8329 |    0.8301 |   768 |        83.1912 |
+| dense           |      0.684 |      0.892 |       0.944 |       0.968 |        0.3328 |              0.5213 | 0.7799 |    0.7828 |   768 |        46.5012 |
+| bm25            |      0.692 |      0.876 |       0.92  |       0.952 |        0.3024 |              0.4737 | 0.7774 |    0.7822 |     0 |        26.9866 |
 
 ## Caveats that belong next to these numbers
 

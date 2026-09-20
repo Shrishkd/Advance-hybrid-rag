@@ -61,7 +61,14 @@ corpus:
 # Answer: all three get built, the benchmark picks.
 # ───────────────────────────────────────────────────────────────────────
 chunking:
-  strategy: recursive          # [UNTESTED] recursive | semantic | parent_child
+  strategy: recursive          # [PROVEN] reports/04e_chunker_bakeoff_synthetic.md (D2)
+                               # All 3 measured. NO pair is significant
+                               # (239-243/250 ties). Chunking is not where the
+                               # wins are on this corpus. recursive chosen on
+                               # build cost (seconds vs 10.9 h for semantic)
+                               # and bounded chunk size (semantic max 8097 tok,
+                               # 40 chunks truncated by the 2048 ctx window).
+                               # parent_child's 'feed large' claim -> Phase 5.
   size_unit: tokens            # tokens | chars  (tokens is the honest unit)
   chunk_size: 512
   chunk_overlap: 64            # ~12%. Overlap protects ideas that straddle a boundary.
@@ -81,7 +88,11 @@ chunking:
 # Adjusted: MTEB is a prior filter, not an answer. Our golden set decides.
 # ───────────────────────────────────────────────────────────────────────
 embedding:
-  model: nomic                 # [UNTESTED] nomic | bge-m3 | embeddinggemma | mxbai | openai-3-small
+  model: embeddinggemma        # [PROVEN] reports/04b_embedder_bakeoff_hybrid_rrf_synthetic.md (D3)
+                               # Beats nomic/mxbai on MRR under hybrid (p<=0.004);
+                               # ties bge-m3 on quality, wins on every cost axis.
+                               # NOTE max_ctx=2048 - fine for 512-token chunks,
+                               # exactly at the limit if parent chunks (2048) are ever embedded.
   batch_size: 16               # small: 7.4GB RAM
   normalize: true              # required for cosine-via-inner-product
 
@@ -121,9 +132,11 @@ index:
 # (ReLU, Adam, BLEU) that embeddings blur but BM25 nails.
 # ───────────────────────────────────────────────────────────────────────
 retrieval:
-  mode: hybrid_rrf             # [PROVEN*] reports/04c_hybrid_retrieval.md (D5)
-                               # +11.8 recall@10 over dense. * PROVISIONAL:
-                               # pinned to nomic; re-run after D3 lands.
+  mode: hybrid_rrf             # [PROVEN] reports/04c_hybrid_retrieval.md (D5)
+                               # Re-run on embeddinggemma (D3). Hybrid's RECALL
+                               # advantage vanishes with a good dense arm
+                               # (p=0.18); it wins on MRR +5.3, p<0.0001.
+                               # Ranking, not coverage, is what fusion buys.
   top_k: 20                    # candidates fetched BEFORE reranking
   rrf_k: 60                    # RRF smoothing constant (60 is the paper default)
   weights:                     # used only by hybrid_weighted

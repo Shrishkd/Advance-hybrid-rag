@@ -264,8 +264,36 @@ def run_config(
     if needs_dense:
         vectors = embed_corpus(embedder, strategy, chunks, backend)
         dim = int(vectors.shape[1])                      # D4: exact, zero error
-        from src.embed.ollama_embedder import get_embedder
-        emb = get_embedder(embedder)
+        # QUERY SIDE MUST MATCH THE DOCUMENT SIDE.
+        # Documents come from `backend`; queries are embedded here, now. This
+        # line used to build an Ollama embedder unconditionally, so a
+        # --backend st run compared fp16 documents against quantised queries.
+        # Same checkpoint, so cosine still returned plausible numbers and
+        # nothing raised - a systematic, model-dependent error in every score.
+        # Guarding the document side alone guarded nothing.
+        if backend == "ollama":
+            from src.embed.ollama_embedder import get_embedder
+            emb = get_embedder(embedder)
+        elif backend == "st":
+            # Prefer the vectors the notebook already produced: no 5 GB of
+            # local checkpoints, and guaranteed identical weights/precision to
+            # the document side. Fall back to local inference only if they are
+            # absent.
+            from src.embed.st_embedder import CachedQueryEmbedder
+            try:
+                emb = CachedQueryEmbedder(embedder, backend)
+            except FileNotFoundError as e:
+                console.print(f"[yellow]{e}[/yellow]")
+                console.print("[yellow]falling back to local "
+                              "sentence-transformers (large download)[/yellow]")
+                from src.embed.st_embedder import get_st_embedder
+                emb = get_st_embedder(embedder)
+        else:
+            raise KeyError(
+                f"backend {backend!r} has no query embedder; a run whose "
+                "query and document vectors come from different backends is "
+                "not a valid comparison."
+            )
 
     bm25 = None
     if needs_sparse:
@@ -389,7 +417,8 @@ def experiment_embedder(cfg: dict, items: list[GoldenItem], candidates: list[str
     strategy = cfg["chunking"]["strategy"]
     results, perq = [], {}
     for name in candidates:
-        console.print(f"\n[bold cyan]── {name} ──[/bold cyan]")
+        console.print()
+        console.print("[bold cyan]-- " + name + " --[/bold cyan]")
         try:
             agg, extras = run_config(name, strategy, items,
                                      cfg["retrieval"]["top_k"],
@@ -510,7 +539,8 @@ def write_report(path: Path, title: str, axis: str, pinned: str,
                  results: list[dict], items: list[GoldenItem], n_total: int,
                  experiment: str = "", cfg: dict | None = None,
                  dataset_path: Path | None = None,
-                 perq: dict | None = None, dataset_name: str = "golden") -> None:
+                 perq: dict | None = None, dataset_name: str = "golden",
+                 backend_name: str = "ollama") -> None:
     import pandas as pd
     perq = perq or {}
 
@@ -524,7 +554,8 @@ def write_report(path: Path, title: str, axis: str, pinned: str,
             # the question with the statistical power in it.
             rows = perq.get(str(r["config"]))
             if rows:
-                pq = PERQ_DIR / (f"{experiment}_{dataset_name}_"
+                tag = dataset_name if backend_name == "ollama" else                     f"{dataset_name}_{backend_name}"
+                pq = PERQ_DIR / (f"{experiment}_{tag}_"
                                  f"{str(r['config']).replace('/', '_')}.jsonl")
                 pq.parent.mkdir(parents=True, exist_ok=True)
                 with pq.open("w", encoding="utf-8") as fh:
@@ -598,6 +629,12 @@ def main() -> int:
                     default="embedder")
     ap.add_argument("--rerankers", default="none,minilm-l6,minilm-l12")
     ap.add_argument("--strategies", default="recursive,parent_child,semantic")
+    ap.add_argument("--mode", default=None,
+                    choices=["dense", "bm25", "hybrid_rrf", "hybrid_weighted"],
+                    help="override retrieval.mode. For D3 this matters: "
+                         "`dense` ISOLATES the embedder, `hybrid_rrf` measures "
+                         "it in production conditions. Run both — see the D3 "
+                         "report for why they answer different questions.")
     ap.add_argument("--backend", default="ollama",
                     help="ollama (local) or st (Colab sentence-transformers). "
                          "Never mix backends inside one experiment.")
@@ -614,6 +651,8 @@ def main() -> int:
     cfg = yaml.safe_load(EXPERIMENT.read_text(encoding="utf-8"))
     if args.strategy:
         cfg["chunking"]["strategy"] = args.strategy
+    if args.mode:
+        cfg["retrieval"]["mode"] = args.mode
     strategy = cfg["chunking"]["strategy"]
     candidates = [c.strip() for c in args.embedders.split(",") if c.strip()]
 
@@ -646,10 +685,15 @@ def main() -> int:
         48-item numbers - internally contradictory, and the kind of document
         that gets quoted later by someone who did not run it.
         """
-        if args.dataset == "golden":
-            return REPORT_DIR / name
         stem, ext = name.rsplit(".", 1)
-        return REPORT_DIR / f"{stem}_{args.dataset}.{ext}"
+        if args.dataset != "golden":
+            stem = f"{stem}_{args.dataset}"
+        if args.backend != "ollama":
+            # Without this, a --backend st run silently replaces the ollama
+            # report and its per-question scores. Both runs are valid; only
+            # one filename existed for them.
+            stem = f"{stem}_{args.backend}"
+        return REPORT_DIR / f"{stem}.{ext}"
     if not dataset.exists():
         console.print(f"[red]no dataset at {dataset}[/red]")
         return 1
@@ -681,7 +725,7 @@ def main() -> int:
             f"(D5), index `flat` (D4). Parent-child scored on CHILD chunks.",
             results, items, len(all_items),
             experiment="chunker", cfg=cfg, dataset_path=dataset,
-            perq=perq, dataset_name=args.dataset,
+            perq=perq, dataset_name=args.dataset, backend_name=args.backend,
         )
         return 0
 
@@ -701,7 +745,7 @@ def main() -> int:
             f"chunker `{strategy}`, index `flat` (D4)",
             results, items, len(all_items),
             experiment="rerank", cfg=cfg, dataset_path=dataset,
-            perq=perq, dataset_name=args.dataset,
+            perq=perq, dataset_name=args.dataset, backend_name=args.backend,
         )
         return 0
 
@@ -719,7 +763,7 @@ def main() -> int:
             f"chunker `{strategy}`, index `flat` (D4)",
             results, items, len(all_items),
             experiment="retrieval", cfg=cfg, dataset_path=dataset,
-            perq=perq, dataset_name=args.dataset,
+            perq=perq, dataset_name=args.dataset, backend_name=args.backend,
         )
         return 0
 
@@ -730,14 +774,14 @@ def main() -> int:
             console.print("[red]no successful runs[/red]")
             return 1
         write_report(
-            report_path("04b_embedder_bakeoff.md"),
+            report_path(f"04b_embedder_bakeoff_{cfg['retrieval']['mode']}.md"),
             "Phase 4b — Embedding Bake-off (D3)",
             "embedding model",
             f"chunker `{strategy}`, index `flat` (D4), retrieval "
             f"`{cfg['retrieval']['mode']}` (D5), backend `{args.backend}`",
             results, items, len(all_items),
             experiment="embedder", cfg=cfg, dataset_path=dataset,
-            perq=perq, dataset_name=args.dataset,
+            perq=perq, dataset_name=args.dataset, backend_name=args.backend,
         )
     return 0
 

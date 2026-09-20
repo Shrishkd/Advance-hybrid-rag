@@ -151,6 +151,7 @@ class OllamaClient:
         temperature: float = 0.0,
         max_tokens: int = 1024,
         think: bool = False,
+        retry_on_empty: bool = True,
     ) -> LLMResponse:
         """One-shot chat completion.
 
@@ -158,7 +159,10 @@ class OllamaClient:
             model: full tag including ':cloud' for cloud models.
             think: whether to let a reasoning model reason. Default False —
                 for graders and routers, reasoning is wasted latency on a
-                yes/no answer.
+                yes/no answer. NOTE: gpt-oss ignores this and reasons anyway,
+                measured; the only working lever is the token budget.
+            retry_on_empty: retry once at 3x budget when the reasoning trace
+                consumed everything. Set False internally to bound recursion.
         """
         import ollama
 
@@ -166,7 +170,9 @@ class OllamaClient:
                   "system": system, "think": think}
         key = ResponseCache.key(model, prompt, params)
 
-        if self.use_cache and (hit := self.cache.get(key)):
+        # `and hit[0]` guards against empties written by an older build,
+        # before the no-empty rule below existed.
+        if self.use_cache and (hit := self.cache.get(key)) and hit[0]:
             return LLMResponse(
                 text=hit[0], model=model, cached=True, latency_ms=0.0, reasoning=hit[1]
             )
@@ -235,14 +241,42 @@ class OllamaClient:
         # reasoning, and an EMPTY answer. Silent, and downstream it looks like
         # the model had nothing to say rather than like a budget error.
         if not text and reasoning:
+            # WARNING WAS NOT ENOUGH. This failure has now been hit three times
+            # in three different callers - candidate generation, synthetic
+            # question generation, and the Phase 5 generation lab, where it
+            # silently emptied 10 of 50 answers (20%) and would have produced a
+            # perfectly formatted, completely invalid comparison table.
+            #
+            # A warning puts the burden on every caller to guess a budget that
+            # covers an unpredictable reasoning trace. Retrying once with a
+            # larger budget fixes it wherever it occurs, including for
+            # reasoning models nobody has seen yet.
+            #
+            # Retry ONCE only: if tripling the budget still yields nothing, the
+            # problem is not the budget and looping would burn tokens.
+            if retry_on_empty and max_tokens < 8192:
+                bigger = min(max_tokens * 3, 8192)
+                warnings.warn(
+                    f"{model}: empty answer after stripping {len(reasoning)} "
+                    f"chars of reasoning (max_tokens={max_tokens}); retrying "
+                    f"once at max_tokens={bigger}.",
+                    stacklevel=2,
+                )
+                return self.chat(model, prompt, system=system,
+                                 temperature=temperature, max_tokens=bigger,
+                                 think=think, retry_on_empty=False)
             warnings.warn(
-                f"{model}: empty answer after stripping {len(reasoning)} chars of "
-                f"reasoning (max_tokens={max_tokens}). The budget was consumed by "
-                "the reasoning trace - raise max_tokens.",
+                f"{model}: STILL empty after retry at max_tokens={max_tokens}. "
+                "Not a budget problem.",
                 stacklevel=2,
             )
 
-        if self.use_cache:
+        # Never cache an empty answer. An empty result is a FAILURE, not a
+        # result worth memoizing, and caching one poisons every later run:
+        # the cache is consulted before the retry above, so a stored empty
+        # short-circuits the fix and returns nothing forever. That is how a
+        # transient budget problem becomes a permanent one.
+        if self.use_cache and text:
             self.cache.put(key, model, prompt, text, reasoning)
 
         return LLMResponse(

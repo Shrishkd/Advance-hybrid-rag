@@ -147,7 +147,16 @@ generators:
     name: gemma3:4b
     size_gb: 3.3
     max_ctx: 131072
+    enabled: false               # UNAVAILABLE 2026-09-20
     why: Different family - guards against family-specific quirks.
+    unavailable: >
+      Pull failed repeatedly: TLS handshake timeout / connection reset to
+      Cloudflare over IPv6. Not a disk or config problem - four retries, other
+      pulls on the same day succeeded. DROPPED by Shrish 2026-09-20.
+      Cost of dropping: one row in the D9 table. Three local generators of the
+      same size class (llama3.2:3b, qwen3:4b, phi4-mini) plus a cloud model
+      remain, and D9 turns on local-vs-cloud rather than on which 4B model.
+      Re-pull on a different network and it simply works; nothing depends on it.
 
   phi4-mini:
     name: phi4-mini
@@ -176,4 +185,27 @@ safety:
   guard:
     name: llama-guard3:1b
     size_gb: 1.6
+    enabled: false               # UNAVAILABLE 2026-09-20
     why: Purpose-built safety classifier for Phase 7 input/output screening.
+    unavailable: >
+      Same IPv6 pull failure as gemma3:4b. DROPPED by Shrish 2026-09-20.
+      plan.md listed it as a CANDIDATE, never a locked decision.
+
+  # SUBSTITUTE, in force for Phase 7.
+  guard_substitute:
+    name: llama3.2:1b
+    size_gb: 1.3
+    why: >
+      Prompted classification in place of a purpose-built guard model.
+      Defensible for THIS application: Llama Guard screens general chat harms
+      (self-harm, violence, hate) while our surface is questions about machine
+      learning textbooks. The guardrails that carry weight here are scope
+      adherence, groundedness and PII - and of those, GROUNDEDNESS IS ALREADY
+      SOLVED WITHOUT A MODEL by src/generate/citations.py, which proves every
+      [S<n>] resolves to a supplied source.
+      A prompted classifier is also inspectable and tunable, where Llama Guard
+      is a black box with fixed categories.
+    caveat: >
+      This is a SUBSTITUTION, not evidence that the specialist was
+      unnecessary. It has not been benchmarked against llama-guard3:1b and
+      cannot be until the pull succeeds. Phase 7's report must say so.

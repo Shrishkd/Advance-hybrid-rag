@@ -86,6 +86,37 @@ def is_cached(embedder_name: str, strategy: str, n_expected: int,
         return False
 
 
+def require_ollama() -> None:
+    """Fail fast and legibly when the Ollama server is not reachable.
+
+    Without this the failure surfaces deep inside an embed loop, after the
+    caller has already loaded the corpus and printed "embedding 5796 chunks",
+    as a bare "Failed to connect to Ollama". A multi-model sweep then reports
+    one model "failed" and moves on to fail identically on the next.
+
+    The specific way this bites on Windows: `ollama serve` started by hand does
+    not survive a terminal restart, and the tray app only picks up the
+    OLLAMA_MODELS User variable at the next LOGIN. So a session can look
+    healthy, have models on disk, and still have nothing listening.
+    """
+    import urllib.error
+    import urllib.request
+
+    try:
+        urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=3)
+    except (urllib.error.URLError, OSError) as e:
+        raise RuntimeError(
+            " ".join([
+                "Ollama is not reachable at 127.0.0.1:11434 -",
+                f"nothing to embed with ({e}).",
+                "Start it with models on D: via",
+                "`powershell -File scripts/start_ollama.ps1`.",
+                "Starting it any other way may recreate an empty model",
+                "directory on C: and leave `ollama list` blank.",
+            ])
+        ) from e
+
+
 def corpus_vectors(
     embedder_name: str,
     strategy: str,
@@ -130,6 +161,8 @@ def corpus_vectors(
             "Produce them with notebooks/embed_colab.ipynb and import with "
             "scripts/import_colab_vectors.py."
         )
+
+    require_ollama()
 
     from src.embed.ollama_embedder import get_embedder
 

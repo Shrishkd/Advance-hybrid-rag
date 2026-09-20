@@ -1,6 +1,6 @@
 # Phase 4c — Retrieval Mode: dense vs BM25 vs hybrid (D5)
 
-Swept: **retrieval mode**.  Pinned: embedder `nomic` (PROVISIONAL — pending D3), chunker `recursive`, index `flat` (D4).
+Swept: **retrieval mode**.  Pinned: embedder `embeddinggemma` (PROVISIONAL — pending D3), chunker `recursive`, index `flat` (D4).
 Dataset: `golden_50.jsonl`.
 Scored on **48 of 50** items (2 unanswerable excluded — they have no ground-truth contexts, so recall on them is 0.0 by construction and would apply a constant penalty to every row).
 
@@ -10,10 +10,10 @@ is mixed into these differences.
 
 | config          |   recall@1 |   recall@5 |   recall@10 |   recall@20 |   precision@5 |   prec@5_vs_ceiling |    mrr |   ndcg@10 |   dim |   query_ms_p50 |
 |:----------------|-----------:|-----------:|------------:|------------:|--------------:|--------------------:|-------:|----------:|------:|---------------:|
-| hybrid_rrf      |     0.4653 |     0.7639 |      0.8229 |      0.8438 |        0.275  |              0.386  | 0.651  |    0.693  |   768 |        275.141 |
-| hybrid_weighted |     0.4757 |     0.7431 |      0.816  |      0.8542 |        0.2708 |              0.3801 | 0.6521 |    0.6773 |   768 |        284.477 |
-| bm25            |     0.4444 |     0.6597 |      0.7326 |      0.8229 |        0.2292 |              0.3216 | 0.5961 |    0.6164 |     0 |        109.019 |
-| dense           |     0.4236 |     0.7049 |      0.7049 |      0.7778 |        0.2458 |              0.345  | 0.6014 |    0.6222 |   768 |        210.845 |
+| hybrid_weighted |     0.4653 |     0.7431 |      0.8681 |      0.9062 |        0.2875 |              0.4035 | 0.6596 |    0.711  |   768 |        90.0175 |
+| hybrid_rrf      |     0.5069 |     0.7743 |      0.8542 |      0.8854 |        0.2833 |              0.3977 | 0.665  |    0.6885 |   768 |       128.081  |
+| dense           |     0.4861 |     0.7465 |      0.7986 |      0.8194 |        0.2667 |              0.3743 | 0.653  |    0.6767 |   768 |        52.6049 |
+| bm25            |     0.4444 |     0.6597 |      0.7326 |      0.8229 |        0.2292 |              0.3216 | 0.5961 |    0.6164 |     0 |        30.9683 |
 
 ## Caveats that belong next to these numbers
 
@@ -31,136 +31,88 @@ is mixed into these differences.
 
 ## Decision
 
-**D5 - chosen retrieval mode: `hybrid_rrf`.** PROVISIONAL: pinned to `nomic`
-pending D3. Re-run after the embedder is chosen.
+**D5 - chosen retrieval mode: `hybrid_rrf`. Unchanged. The JUSTIFICATION has
+changed completely, and the original headline number is now obsolete.**
 
-### The prior held, and by a wide margin
+Re-run with `embeddinggemma` as the dense arm (D3), replacing the provisional
+run pinned to `nomic`.
 
-Pre-registered in `configs/experiment.yaml`: *"hybrid wins clearly - textbooks
-are full of exact terms (ReLU, Adam, BLEU) that embeddings blur but BM25
-nails."* Measured:
+### A prediction, made before the re-run and confirmed
 
-| | recall@10 | vs dense |
-|---|---:|---:|
-| dense | 0.7049 | - |
-| bm25 | 0.7326 | +2.8 |
-| **hybrid_rrf** | **0.8229** | **+11.8** |
-| hybrid_weighted | 0.8160 | +11.1 |
+Stated in advance: *"the hybrid-over-dense margin will shrink, because a
+stronger dense arm leaves BM25 less to add."* Measured:
 
-**+11.8 points at n=48.** Our stated noise band is ~5 points, so this is the
-first Phase 4 effect comfortably clear of it. MRR (+5.0) and nDCG@10 (+7.1)
-move in the same direction, which matters: a gain that appeared in recall but
-not in ranking quality would suggest we were merely retrieving more, not
-better.
+| dense arm | dataset | dense r@10 | hybrid r@10 | gain |
+|---|---|---:|---:|---:|
+| nomic | golden n=48 | 0.7049 | 0.8229 | **+11.8** |
+| embeddinggemma | golden n=48 | 0.7986 | 0.8542 | **+5.6** |
+| nomic | synthetic n=250 | 0.8880 | 0.9520 | **+6.4** |
+| embeddinggemma | synthetic n=250 | 0.9440 | 0.9640 | **+2.0** |
 
-### The unexpected finding: BM25 alone beats dense
+The gain roughly halves on both datasets. **The +11.8 that justified this
+decision was substantially a measure of how weak `nomic` was**, not of how
+much hybrid retrieval adds.
 
-`bm25` scores 0.7326 recall@10 against dense's 0.7049 - a lexical method from
-1994, no embedding model, no GPU, a 1.3-second index build, beating a
-768-dimensional neural embedder on our corpus. It is also **2x faster**
-(51 ms vs 104 ms p50).
+### The recall argument no longer survives its own test
 
-Technical textbooks are dense with tokens that must match literally - `ReLU`,
-`AdaGrad`, `L-BFGS`, `CKY`, `BLEU`. Dense embeddings place `Adam` near
-`RMSProp` near `SGD`, which is correct semantics and wrong retrieval when the
-question names one of them.
+    recall@10, synthetic n=250, embeddinggemma
+      ns   dense vs hybrid_rrf   -0.0200  CI[-0.0440,+0.0040]  2W/7L/241T  p=0.1797
 
-It does not mean dense is useless: fusing the two beats either alone by ~9-12
-points, so each arm finds documents the other misses.
+241 ties out of 250. With a good dense arm, **hybrid does not find
+significantly more than dense alone.** If recall@10 were the only metric, D5
+would now be "no measurable difference - pick the cheaper one", and dense is
+cheaper (47 ms vs 83 ms).
 
-### The mechanism, visible in the numbers
+### The ranking argument is what actually carries D5 now
 
-Dense has **recall@5 == recall@10 == 0.7049**. Ranks 6-10 contribute nothing:
-dense either surfaces the passage in its top 5 or never. Hybrid breaks that
-flat spot - 0.7639 at k=5 rising to 0.8229 at k=10 - because BM25 contributes
-documents dense had not ranked anywhere near the top. That is what RRF is
-designed to reward, and it is the clearest evidence here that the two signals
-are complementary rather than redundant.
+    MRR, synthetic n=250
+      SIG  dense vs hybrid_rrf       -0.0529  21W/58L/171T  p<0.0001
+      SIG  bm25  vs hybrid_rrf       -0.0554  20W/60L/170T  p<0.0001
+      SIG  dense vs hybrid_weighted  -0.0674  20W/52L/178T  p=0.0002
 
-The same asymmetry appears from the other side: BM25 **loses** at k=5 (0.6597
-vs dense 0.7049) and **wins** at k=10. Lexical match has better coverage but
-noisier ordering - an exact term hit can land on a passing mention. Dense
-orders better but has a hard coverage ceiling. That is precisely the shape of
-problem a cross-encoder reranker (D6) is meant to fix, and it is why the
-reranker belongs after the FUSED pool rather than after either arm.
+Hybrid beats **both** of its own arms on MRR, decisively, surviving Bonferroni
+across six pairs. It is not merely inheriting the better arm - fusing them
+orders results better than either ordering alone.
 
-### RRF vs weighted fusion: a genuine tie, broken on principle
+So the honest statement of what hybrid buys, at this dense-arm quality:
 
-| | recall@10 | recall@20 | MRR | nDCG@10 |
-|---|---:|---:|---:|---:|
-| hybrid_rrf | **0.8229** | 0.8438 | 0.6510 | **0.6930** |
-| hybrid_weighted | 0.8160 | **0.8542** | **0.6521** | 0.6773 |
+    recall  (did we find it)      no measurable gain
+    MRR     (how high did it land) +5.3 points, p < 0.0001
 
-They trade wins across four metrics and no gap exceeds 1.1 points. At n=48
-this is a tie, and calling either "the winner" would be false precision.
+That is the same phenomenon D3 found from the other side: fusion converges
+recall across embedders while leaving MRR separated. Two experiments, one
+mechanism.
 
-**RRF is chosen because it has no free parameter.** `hybrid_weighted` ran at
-`w_dense=0.5`, a value nobody tuned. Tuning it on 48 questions would fit a
-weight to this specific sample, and a project whose premise is that decisions
-must be earned should not adopt a knob it cannot justify. RRF's k=60 is the
-published default, adopted knowingly and unchanged.
+**Why that still justifies the cost.** The generator reads the top few chunks,
+so where a passage lands matters more to the user than whether it sits
+somewhere in the top 20. +36 ms for a 5.3-point MRR gain is worth paying; the
+same 36 ms for a recall gain we cannot measure would not be.
 
-### Cost
+### RRF vs weighted: still a tie, still broken on principle
 
-Hybrid costs **+40 ms p50** over dense (144 ms vs 104 ms) plus one in-memory
-index built in ~1.3 s. Against 1,000-3,000 ms of generation, that is noise.
-Accepted without reservation.
+    hybrid_rrf vs hybrid_weighted, synthetic n=250
+      recall@10   +0.0000   1W/1L/248T   p=1.0000
+      MRR         -0.0144  18W/24L/208T  p=0.4408
+      recall@1    -0.0280   5W/12L/233T  p=0.1435
 
-### What this does NOT settle
+`hybrid_weighted` has the higher point estimate on MRR and recall@1 for the
+second time - and for the second time it fails to reach significance. 248 ties
+out of 250 on recall@10.
 
-- **Pinned to `nomic`.** If D3 picks a different embedder the dense arm gets
-  stronger and this margin may shrink. Re-run required.
-- **bge-m3 emits sparse and ColBERT vectors from one model**, which could
-  replace BM25 with a learned lexical signal. Ollama serves dense only, so
-  that needs FlagEmbedding on Colab - deferred, flagged in `plan.md`.
-- **No reranker yet (D6).** hybrid's recall@20 = 0.8438 is the hard ceiling on
-  anything reranking can deliver.
+**RRF stands.** `hybrid_weighted` ran at an untuned `w_dense=0.5`; adopting it
+would mean adopting a free parameter fitted to nothing, on evidence that has
+now twice failed its own test. The no-free-parameter argument is unchanged.
 
-### Confirmed statistically, after the fact
+### What this re-run cost, and why it was worth doing
 
-The "genuine tie" above was originally a judgement call from eyeballing four
-metrics. It now has a paired test behind it (`evaluation/significance.py`):
-
-    hybrid_rrf vs hybrid_weighted, recall@10, n=48 golden
-      difference   +0.0069   95% CI [-0.0347, +0.0486]
-      sign test    3W / 2L / 43T    p = 1.0000
-
-**43 ties out of 48.** The two fusion methods return the same result on 90% of
-questions. "Tie" was the right call.
-
-The ~5-point noise band quoted throughout this project is also now known to be
-the WRONG tool. It is the standard error of an unpaired proportion, and these
-comparisons are paired - every config answers the same questions. The paired
-view is much sharper, and it is what the 250-item run below uses.
-
-### Re-tested on the synthetic 250, where weighted appeared to win
-
-On `synthetic_retrieval.jsonl` (n=250) `hybrid_weighted` led on every headline
-number, which looked like grounds to revisit this decision. Tested properly:
-
-| metric | diff | 95% CI | sign test | p |
-|---|---:|---|---|---:|
-| recall@10 | +0.0040 | [-0.0120, +0.0240] | 3W/2L/**245T** | 1.000 |
-| MRR | +0.0217 | [+0.0020, +0.0414] | 33W/18L/199T | 0.049 |
-| recall@1 | +0.0280 | [-0.0080, +0.0640] | 13W/6L/231T | 0.167 |
-
-One metric of three clears 0.05 - and three metrics were tested. Reporting the
-one that passed is p-hacking. Bonferroni puts the threshold at 0.0167, and
-MRR's p=0.0306 **does not survive it**.
-
-Two further reasons not to flip on this evidence even if it had survived:
-
-1. **245 of 250 ties on recall@10.** Whatever separates these methods is
-   confined to ordering within an almost identical result set.
-2. **The synthetic set's known bias points exactly this way.** Its questions
-   were written while looking at the passage, which flatters lexical
-   retrieval - and weighted fusion is precisely the method that amplifies a
-   confident lexical arm, because it blends raw scores rather than ranks. A
-   win here is what the bias predicts, not independent evidence.
-
-**D5 unchanged: `hybrid_rrf`.** The no-free-parameter argument remains decisive.
+Nothing but compute - the vectors were already cached. Had it been skipped,
+the README would still claim hybrid buys +11.8 recall@10, which is now known
+to be an artifact of the embedder it was measured with. **A decision made
+against a provisional dependency has to be re-made when that dependency
+resolves**, even when the decision itself does not change.
 
 ### Recorded
 
-- `configs/experiment.yaml` -> `retrieval.mode: hybrid_rrf`.
-- `plan.md` decision log -> **D5** (provisional).
+- `configs/experiment.yaml` -> `retrieval.mode: hybrid_rrf`, tag `[PROVEN]`
+  (was `[PROVEN*]` provisional).
+- `plan.md` decision log -> **D5**, no longer provisional.

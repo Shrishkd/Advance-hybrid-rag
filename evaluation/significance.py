@@ -159,18 +159,79 @@ def compare(experiment: str, dataset: str, cfg_a: str, cfg_b: str,
     }
 
 
+def matrix(experiment: str, dataset: str, configs: list[str],
+           metric: str = "recall@10") -> list[dict]:
+    """All pairwise comparisons, with the correction counted automatically.
+
+    WHY THIS EXISTS RATHER THAN RUNNING THE PAIRS BY HAND
+    ------------------------------------------------------
+    Comparing k configs means k*(k-1)/2 tests. Four embedders is six. Running
+    them one command at a time makes it easy to pass --n-comparisons 2 out of
+    habit, or to quietly forget the pairs that came back null. Counting the
+    pairs in code removes both mistakes.
+
+    NON-TRANSITIVITY IS NORMAL, NOT A BUG
+    -------------------------------------
+    You will see A > C significantly while A ~ B and B ~ C. That is not a
+    contradiction: B sits between them and the sample resolves the large gap
+    but not the two small ones. "Not significant" means "this sample cannot
+    tell them apart", never "they are equal".
+
+    The practical reading: configs that cannot be separated on quality should
+    be separated on COST - latency, dimension, memory, context window.
+    """
+    out = []
+    pairs = [(a, b) for i, a in enumerate(configs) for b in configs[i + 1:]]
+    alpha = 0.05 / max(1, len(pairs))
+    for a, b in pairs:
+        try:
+            r = compare(experiment, dataset, a, b, metric)
+        except FileNotFoundError:
+            continue
+        r["a"], r["b"] = a, b
+        r["alpha"] = alpha
+        r["significant"] = (
+            not (r["ci_low"] <= 0 <= r["ci_high"])
+            and max(r["p_bootstrap"], r["p_sign"]) < alpha
+        )
+        out.append(r)
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Paired significance test.")
     ap.add_argument("--experiment", default="retrieval")
     ap.add_argument("--dataset", default="golden")
-    ap.add_argument("--a", required=True)
-    ap.add_argument("--b", required=True)
+    ap.add_argument("--a")
+    ap.add_argument("--b")
+    ap.add_argument("--matrix", help="comma-separated configs; all pairs")
     ap.add_argument("--metric", default="recall@10")
     ap.add_argument("--n-comparisons", type=int, default=1,
                     help="how many metrics/pairs this investigation tests. "
                          "Applies a Bonferroni correction.")
     args = ap.parse_args()
 
+    if args.matrix:
+        cfgs = [c.strip() for c in args.matrix.split(",") if c.strip()]
+        rows = matrix(args.experiment, args.dataset, cfgs, args.metric)
+        if not rows:
+            console.print("[red]no per-question files found for those configs[/red]")
+            return 1
+        console.print(f"[bold]{args.metric}[/bold], {args.dataset}, " f"n={rows[0]['n']}, {len(rows)} pairs, " f"corrected alpha={rows[0]['alpha']:.4f} ")
+        for r in rows:
+            mark = "[green]SIG  [/green]" if r["significant"] else "[dim]ns   [/dim]"
+            console.print(
+                f"  {mark} {r['a']:16s} vs {r['b']:16s} "
+                f"{r['diff']:+.4f}  CI[{r['ci_low']:+.4f},{r['ci_high']:+.4f}]  "
+                f"{r['wins']}W/{r['losses']}L/{r['ties']}T  p={r['p_sign']:.4f}"
+            )
+        console.print()
+        console.print("[dim]ns = this sample cannot separate them, NOT "
+                      "'they are equal'. Separate ties on cost instead.[/dim]")
+        return 0
+
+    if not (args.a and args.b):
+        ap.error("pass --a and --b, or --matrix")
     r = compare(args.experiment, args.dataset, args.a, args.b, args.metric)
 
     console.print(f"\n[bold]{args.a}[/bold] vs [bold]{args.b}[/bold] "

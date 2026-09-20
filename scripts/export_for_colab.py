@@ -77,6 +77,44 @@ def corpus_fingerprint(texts: list[str]) -> str:
     return h.hexdigest()
 
 
+def query_key(text: str) -> str:
+    """Stable id for a query, derived from its TEXT not its qid.
+
+    Keying on content rather than qid means an edited question cannot silently
+    reuse the vector of its previous wording. A qid is a label someone can
+    change the meaning of; a hash is not.
+    """
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def collect_queries() -> list[dict]:
+    """Every question the labs score, across both datasets, de-duplicated.
+
+    WHY QUERIES GO TO COLAB TOO
+    ---------------------------
+    Colab embeds DOCUMENTS. Queries are embedded at search time - and they must
+    come from the SAME backend, or a run compares fp16 documents against
+    quantised queries and every score carries a silent, model-dependent error.
+
+    The alternative is downloading ~5 GB of HuggingFace weights locally just to
+    encode 298 short strings. Sending the questions instead costs a few hundred
+    kilobytes and one notebook minute.
+    """
+    seen: dict[str, dict] = {}
+    for name in ("golden_50.jsonl", "synthetic_retrieval.jsonl"):
+        f = Path("data/golden") / name
+        if not f.exists():
+            continue
+        for line in f.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            r = json.loads(line)
+            q = r.get("question", "").strip()
+            if q:
+                seen.setdefault(query_key(q), {"k": query_key(q), "text": q})
+    return sorted(seen.values(), key=lambda r: r["k"])
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Export chunk texts for Colab.")
     ap.add_argument("--strategy", default="recursive")
@@ -96,8 +134,15 @@ def main() -> int:
             # Text and index only. No book, no page, no chunk id.
             f.write(json.dumps({"i": i, "text": t}, ensure_ascii=False) + "\n")
 
+    queries = collect_queries()
+    q_path = OUT_DIR / "queries.jsonl"
+    with q_path.open("w", encoding="utf-8") as f:
+        for r in queries:
+            print(json.dumps(r, ensure_ascii=False), file=f)
+
     manifest = {
         "strategy": args.strategy,
+        "n_queries": len(queries),
         "n_chunks": len(texts),
         "corpus_fingerprint": fp,
         "expected_outputs": [
@@ -111,6 +156,7 @@ def main() -> int:
     mb = texts_path.stat().st_size / 1e6
     print(f"{len(texts)} chunks -> {texts_path}  ({mb:.1f} MB)")
     print(f"fingerprint: {fp[:16]}...")
+    print(f"queries    : {len(queries)} -> {q_path}")
     print(f"manifest   : {OUT_DIR / (args.strategy + '_manifest.json')}")
     print()
     print("Upload BOTH files to the Colab notebook. Metadata (book, page,")

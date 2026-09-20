@@ -41,7 +41,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.export_for_colab import corpus_fingerprint, load_chunks  # noqa: E402
+from scripts.export_for_colab import (                                # noqa: E402
+    collect_queries, corpus_fingerprint, load_chunks,
+)
 from src.embed.corpus_cache import VEC_DIR, cache_path                # noqa: E402
 
 CANDIDATES = ("nomic", "bge-m3", "embeddinggemma", "mxbai")
@@ -149,7 +151,72 @@ def main() -> int:
         print("\nno usable vector files found.")
         return 1
 
+    # Query vectors, if the notebook produced them. Verified the same way, and
+    # checked against the LOCAL query set: a stale queries.jsonl on the Colab
+    # side would otherwise install vectors for questions that no longer exist.
+    qkeys_file = src / "query_keys__st.json"
+    q_arrays: dict[str, np.ndarray] = {}
+    if qkeys_file.exists():
+        keys = json.loads(qkeys_file.read_text(encoding="utf-8"))
+        local = {r["k"] for r in collect_queries()}
+        missing = local - set(keys)
+        if missing:
+            print(f"{len(missing)} local question(s) have no Colab vector — "
+                  "re-export and rerun the notebook. Nothing installed.")
+            return 1
+        for name in CANDIDATES:
+            f = src / f"{name}_queries__st.npy"
+            if not f.exists():
+                continue
+            arr = np.load(f)
+            errs = verify(arr, len(keys), f"{name} queries")
+            if errs:
+                for e in errs:
+                    print(f"  [FAIL] {e}")
+                return 1
+            q_arrays[name] = arr
+        print(f"query vectors OK for {sorted(q_arrays)} ({len(keys)} queries)")
+
+    # Semantic-chunking sentence-group vectors (D2 pass 2). These do NOT go
+    # in the vector cache: they are an input to CHUNKING, consumed once by
+    # the ingest pipeline, not a corpus index keyed by (embedder, strategy).
+    sem_keys = src / "semantic_group_keys.json"
+    sem_vecs = src / "semantic_groups.npy"
+    if sem_keys.exists() and sem_vecs.exists():
+        keys_s = json.loads(sem_keys.read_text(encoding="utf-8"))
+        arr_s = np.load(sem_vecs)
+        if len(keys_s) != len(arr_s):
+            print(f"semantic: {len(keys_s)} keys but {len(arr_s)} vectors — "
+                  "refusing.")
+            return 1
+        local_groups = Path("build/colab/semantic_groups.jsonl")
+        if local_groups.exists():
+            want = {json.loads(l)["k"]
+                    for l in local_groups.read_text(encoding="utf-8").splitlines()
+                    if l.strip()}
+            missing = want - set(keys_s)
+            if missing:
+                print(f"semantic: {len(missing)} local group(s) have no vector "
+                      "— re-run the recording pass and the notebook. Refusing.")
+                return 1
+        dest = Path("build/colab")
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "semantic_group_keys.json").write_text(
+            json.dumps(keys_s), encoding="utf-8")
+        np.save(dest / "semantic_groups.npy", arr_s)
+        print(f"semantic groups OK: {arr_s.shape} {arr_s.dtype} -> {dest}")
+        print("  next: python -m src.ingest.pipeline --strategy semantic "
+              "--group-vectors build/colab")
+
     VEC_DIR.mkdir(parents=True, exist_ok=True)
+    if q_arrays:
+        (VEC_DIR / f"query_keys__{args.backend}.json").write_text(
+            json.dumps(keys), encoding="utf-8")
+        for name, arr in q_arrays.items():
+            dst = VEC_DIR / f"{name}_queries__{args.backend}.npy"
+            np.save(dst, arr.astype(np.float32))
+            print(f"installed {dst}  ({arr.nbytes/1e6:.1f} MB)")
+
     for name, arr in arrays.items():
         dst = cache_path(name, args.strategy, args.backend)
         np.save(dst, arr.astype(np.float32))

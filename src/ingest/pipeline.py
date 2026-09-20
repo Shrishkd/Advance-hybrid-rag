@@ -38,6 +38,9 @@ from .toc import SectionIndex
 
 console = Console()
 
+# Set by main() for semantic pass 1/2; None means embed locally.
+SEMANTIC_EMBEDDER = None
+
 EXPERIMENT = Path("configs/experiment.yaml")
 CORPUS = Path("configs/corpus.yaml")
 CHUNK_DIR = Path("data/chunks")
@@ -213,8 +216,15 @@ def ingest_document(pdf: Path, meta: dict, cfg: dict) -> tuple[list[Chunk], list
             # circular. We use the config's current embedding.model and record
             # it, so the dependency is visible rather than hidden.
             sem_cfg = chcfg.get("semantic", {})
-            from src.embed.ollama_embedder import get_embedder
-            embedder = get_embedder(cfg["embedding"]["model"])
+            # Three ways to supply sentence vectors, chosen by CLI flag:
+            #   record  - pass 1, embeds nothing, records what WOULD be embedded
+            #   cached  - pass 2, looks up vectors produced elsewhere (Colab)
+            #   default - embed locally. ~10.9 h on this corpus; see
+            #             src/ingest/semantic_embed.py for the measurement.
+            embedder = SEMANTIC_EMBEDDER
+            if embedder is None:
+                from src.embed.ollama_embedder import get_embedder
+                embedder = get_embedder(cfg["embedding"]["model"])
             chunks.extend(
                 make(s, "sem")
                 for s in split_semantic(
@@ -249,10 +259,33 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Phase 2 ingestion.")
     ap.add_argument("--strategy", help="override chunking.strategy")
     ap.add_argument("--force", action="store_true", help="reprocess everything")
+    ap.add_argument("--record-groups", metavar="PATH",
+                    help="semantic pass 1: record sentence groups to PATH and "
+                         "embed nothing. The chunks written by this run are "
+                         "MEANINGLESS and should be discarded.")
+    ap.add_argument("--group-vectors", metavar="PATH",
+                    help="semantic pass 2: directory holding "
+                         "semantic_group_keys.json + semantic_groups.npy")
     args = ap.parse_args()
 
     cfg = yaml.safe_load(EXPERIMENT.read_text(encoding="utf-8"))
     corpus = yaml.safe_load(CORPUS.read_text(encoding="utf-8"))["books"]
+    global SEMANTIC_EMBEDDER
+    recorder = None
+    if args.record_groups:
+        from src.ingest.semantic_embed import RecordingEmbedder
+        recorder = RecordingEmbedder()
+        SEMANTIC_EMBEDDER = recorder
+        console.print("[yellow]PASS 1: recording sentence groups. The chunks "
+                      "this run writes are meaningless - discard them.[/yellow]")
+    elif args.group_vectors:
+        from src.ingest.semantic_embed import CachedGroupEmbedder
+        d = Path(args.group_vectors)
+        SEMANTIC_EMBEDDER = CachedGroupEmbedder(
+            d / "semantic_group_keys.json", d / "semantic_groups.npy")
+        console.print(f"[cyan]PASS 2: using cached sentence vectors from "
+                      f"{d} (dim={SEMANTIC_EMBEDDER.dim})[/cyan]")
+
     if args.strategy:
         cfg["chunking"]["strategy"] = args.strategy
     strategy = cfg["chunking"]["strategy"]
@@ -363,6 +396,29 @@ def main() -> int:
 
     man.save()
     console.print(f"[bold green]{total} chunks -> {out_dir}[/bold green]")
+    if recorder is not None:
+        out = Path(args.record_groups)
+        n = recorder.save(out)
+        console.print(f"[bold green]{n} unique sentence groups -> {out}[/bold green]")
+
+        # DELETE the chunks this pass wrote, and forget the strategy in the
+        # manifest. Pass 1 uses constant dummy vectors, so every distance is
+        # zero, nothing exceeds the percentile threshold, and each document
+        # collapses into one enormous span. Those files are well-formed and
+        # would load and score without complaint - a silent-wrong artifact of
+        # exactly the kind this project keeps tripping over. Leaving them on
+        # disk with a printed warning is not a safeguard.
+        removed = 0
+        for f in (CHUNK_DIR / strategy).glob("*.jsonl"):
+            f.unlink()
+            removed += 1
+        for rec in man.records.values():
+            rec.strategy_versions.pop(strategy, None)
+        man.save()
+        console.print(f"[yellow]removed {removed} placeholder chunk file(s) and "
+                      f"cleared {strategy!r} from the manifest, so pass 2 "
+                      "reprocesses from scratch.[/yellow]")
+
     return 0
 
 
