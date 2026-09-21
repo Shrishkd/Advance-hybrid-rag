@@ -7,11 +7,12 @@ the top documents actually about the question? If none are, the question was
 probably worded in a way retrieval could not match, so rewrite it and search once
 more.
 
-WRITTEN BY CLAUDE ON SHRISH'S INSTRUCTION ("do whatever you find right").
-`crag_route` is a graph routing condition - his column in CLAUDE.md. The concept
-he skipped by delegating it: choosing a relevance threshold when the grader itself
-is noisy, trading needless re-retrieval against answering from weak evidence. The
-reasoning is written out in the function so it can be read, challenged and changed.
+THE HARD PART IS THE THRESHOLD
+------------------------------
+`crag_route` is a graph routing condition. The real design question is choosing a
+relevance threshold when the grader itself is noisy: trading needless re-retrieval
+against answering from weak evidence. The reasoning is written out in the function
+so it can be read, challenged and changed.
 
 TWO LESSONS CARRIED FROM THE DECOMPOSITION RUNS
 -----------------------------------------------
@@ -57,7 +58,7 @@ WHY BATCHED AND IN THE CLOUD - measured, not preferred. The first CRAG run grade
 each passage with a separate llama3.2:3b call. On this 7.4 GB machine that model
 (~2 GB) could not coexist with the embedder and the served chatbot: free RAM fell to
 0.2 GB, Windows compressed 1.9 GB of memory, and the run froze at 22/50 questions
-along with the API. CLAUDE.md prefers local graders for cost; here a local grader
+along with the API. Local graders are preferred for cost; here a local grader
 made the system unusable. One batched cloud call per question uses no local RAM and
 replaces five calls with one.
 """

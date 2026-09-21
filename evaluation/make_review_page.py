@@ -5,8 +5,8 @@
 
 WHY LOCAL, NOT A HOSTED PAGE
 ----------------------------
-The page embeds excerpts of copyrighted textbook text. CLAUDE.md says the
-corpus never leaves this machine, so this writes a plain file opened with
+The page embeds excerpts of copyrighted textbook text, and the corpus
+never leaves this machine, so this writes a plain file opened with
 file:// - nothing is uploaded, and it works offline.
 
 WORKFLOW

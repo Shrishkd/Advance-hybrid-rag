@@ -11,8 +11,8 @@ get worse since last time", which is a different question and the one that
 catches the expensive class of bug: a refactor that quietly degrades retrieval
 while every test still passes and every report still renders.
 
-Exit code 1 on regression, so it can gate a commit hook or CI if Shrish wants
-it to. It does not install any hook itself - git is Shrish's.
+Exits with code 1 on regression, so it can gate a pre-commit hook or a CI job.
+It only reports: it never installs hooks or modifies the repository.
 
 THE THRESHOLD IS A TRIPWIRE, NOT A VERDICT
 -------------------------------------------

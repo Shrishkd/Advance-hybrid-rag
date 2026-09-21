@@ -150,7 +150,7 @@ def as_retrieved(chunk: dict) -> RetrievedChunk:
 
 
 # ───────────────────────────────────────────────────────────────────────
-# Which items can be scored  ← SHRISH WRITES THIS
+# Which items can be scored
 # ───────────────────────────────────────────────────────────────────────
 
 def scorable_items(items: list[GoldenItem]) -> list[GoldenItem]:

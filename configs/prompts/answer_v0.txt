@@ -1,8 +1,8 @@
 # ─────────────────────────────────────────────────────────────────────────
 # ANSWER PROMPT — v0
 #
-# Rules 1-4 are SHRISH'S, specified 2026-09-20. Rules 5-6 are Claude's
-# additions and are marked; delete them if unwanted.
+# Rules 1-4 are the core contract. Rules 5-6 are supplementary and marked;
+# they can be removed independently.
 #
 # The prompt is a config value like any other: it gets benchmarked, not
 # assumed. To iterate, copy to answer_v1.txt, change ONE instruction, re-run
@@ -36,7 +36,7 @@ RULES
    followed by one sentence saying what is missing. Do not guess, and do not
    fall back on general knowledge.
 
-# --- rules below added by Claude, delete if unwanted ---------------------
+# --- supplementary rules (removable independently) -----------------------
 
 5. If the question is ambiguous and the sources support more than one reading,
    say so and give each reading, cited. Do not silently pick one.

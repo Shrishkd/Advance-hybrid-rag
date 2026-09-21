@@ -81,7 +81,7 @@ class GraphConfig:
     budget: int = 5300
     max_tokens: int = 700
     temperature: float = 0.0
-    # Model for query-side nodes (decompose). CLAUDE.md: graph nodes run on
+    # Model for query-side nodes (decompose). Design rule: graph nodes run on
     # tiny LOCAL models; only answer generation goes to cloud. qwen3:0.6b is
     # excluded - it is the reasoning family that leaked its monologue at 4B.
     transform_model: str = "llama3.2:1b"

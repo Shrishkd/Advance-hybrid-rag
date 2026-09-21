@@ -15,8 +15,8 @@ APPEND-ONLY, DELIBERATELY
 -------------------------
 There is no UPDATE and no DELETE in this module. A run that embarrasses us is
 exactly the run worth keeping: the negative results are the evidence that the
-positive ones were earned. `CLAUDE.md`: "Never overwrite history; regressions
-must stay visible."
+positive ones were earned. Never overwrite history; regressions must stay
+visible.
 
 WHAT A ROW IS KEYED BY
 ----------------------
@@ -29,8 +29,8 @@ code AND the questions - and the golden set is the one people forget. Add five
 questions and every metric shifts for reasons that have nothing to do with
 retrieval. Storing its hash makes that visible instead of mysterious.
 
-Git is Shrish's (CLAUDE.md), so git_sha is READ with a plain subprocess call
-and degrades to "nogit" when the repo is not initialised. Nothing here ever
+git_sha is only READ, with a plain subprocess call, and it
+degrades to "nogit" when the repo is not initialised. Nothing here ever
 writes to git.
 """
 

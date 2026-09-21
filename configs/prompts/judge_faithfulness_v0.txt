@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────
 # JUDGE PROMPT — citation faithfulness, v0
 #
-# SHRISH OWNS THIS FILE (prompt templates are his column in CLAUDE.md). Draft.
+# Prompt templates are versioned config: copy to _v1 and change one thing to iterate.
 #
 # WHAT IT JUDGES — narrowly. Not "is the answer good", not "is it correct in
 # general". Only: does each cited source actually SUPPORT the claim the answer

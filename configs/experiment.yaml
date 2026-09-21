@@ -14,7 +14,7 @@
 #
 # STATUS LEGEND (update as evidence arrives):
 #   [UNTESTED] - a guess. Default value, no evidence yet.
-#   [PRIOR]    - Claude expects this to win. Still a guess.
+#   [PRIOR]    - expected to win before measuring. Still a guess.
 #   [PROVEN]   - backed by numbers in reports/NN_*.md
 # ═══════════════════════════════════════════════════════════════════════
 

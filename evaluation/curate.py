@@ -1,9 +1,9 @@
-"""Phase 3 curation: candidates + hand-written items -> golden_50.jsonl.
+"""Phase 3 curation: candidates + manual items -> golden_50.jsonl.
 
 Workflow:
     1. generate_candidates.py  ->  data/golden/candidates.jsonl   (keep: null)
-    2. YOU edit "keep": true/false, fixing questions/answers/pages as needed
-    3. YOU write the 3 manual types into data/golden/manual.jsonl
+    2. review candidates: set "keep": true/false, fixing questions/answers/pages as needed
+    3. add the 3 manual types to data/golden/manual.jsonl
     4. curate.py --promote     ->  data/golden/golden_50.jsonl
 
 Commands:
@@ -149,7 +149,7 @@ def cmd_promote(recs: list[dict]) -> int:
         return 1
 
     # A curated golden set is hours of human judgement and is NOT reproducible
-    # from candidates.jsonl alone - items can be hand-edited or hand-written
+    # from candidates.jsonl alone - items can be edited or added
     # elsewhere (review.html exports straight to this path). Overwriting it
     # silently would be the most expensive data loss in the project, so keep a
     # timestamped copy first.

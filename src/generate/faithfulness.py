@@ -16,7 +16,7 @@ everything in citations.py.
 
 JUDGE != GENERATOR
 ------------------
-`CLAUDE.md`: the judge is never the generator (self-preference bias). The judge
+The judge should not be the generator's own model (self-preference bias). The judge
 here is gpt-oss:120b-cloud. That is clean for llama and phi4, and SAME FAMILY
 for gpt-oss:20b-cloud - so that row carries a caveat, and a same-family win
 must not be read as independent evidence.

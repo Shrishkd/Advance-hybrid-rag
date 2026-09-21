@@ -195,7 +195,7 @@ On completion:
 
 ## 8. Stated prior (to be falsified)
 
-Claude's expectation before measurement: **`pymupdf_sorted` wins**, on the grounds that
+Expectation before measurement: **`pymupdf_sorted` wins**, on the grounds that
 several books are multi-column and `sort=True` fixes reading order, and that PyMuPDF is
 fast enough to re-ingest casually.
 

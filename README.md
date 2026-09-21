@@ -8,20 +8,30 @@ revisit them. This one treats each of those as an open question, benchmarks the 
 against a hand-labelled golden dataset, and ships the winner. The tables below are the
 project; the chatbot is what falls out of them.
 
-> **Status:** complete. Phases 0–9 done; Phase 10 (fine-tuning) deferred with reasons. Every served setting traces to a report in
-> [`reports/`](reports). Live board: [`plan.md`](plan.md).
+Every served setting traces to a numbered report in [`reports/`](reports). To run it, see
+[Setup and installation](#setup-and-installation) and [How to run](#how-to-run).
 
-## Run it
+## Demo
 
-```bash
-powershell -File scripts/start_ollama.ps1                 # models live on D:
-uvicorn src.serve.api:app --port 8000                     # the RAG API
-streamlit run app/streamlit_app.py                        # the chat UI
-python scripts/acceptance_test.py                         # end-to-end check: 7/7
-```
+![Answer with every claim cited](media/question_3.png)
+**Every claim is cited to book, section and page.** Asked why part-of-speech tagging alone
+cannot resolve Jurafsky's *"I made her duck"*, the answer separates the lexical, syntactic
+and semantic ambiguities and cites each claim to *Jurafsky, 1.2 Ambiguity, PDF p. 4*. The
+footer shows the path the request took through the graph
+(`start_turn → condense:skip → retrieve → generate`) and its end-to-end latency (10.5 s).
 
-Needs ~2 GB free RAM. On a 7.4 GB machine, close other heavy apps first: with two IDEs
-and a browser open, free RAM fell to 0.2 GB and every model call stalled.
+![Numerical question grounded in a specific section](media/question_1.png)
+**Numerical reasoning, grounded in the source.** For Raschka's `GPTDatasetV1` sliding window
+(10,000 tokens, `max_length` 256, `stride` 128) the answer works out 77 input–target rows
+and cites *§2.6 Data sampling with a sliding window, p. 37*. The sidebar lists the
+configuration the server is running; each value was chosen by a benchmark. (0.7 s: this
+answer was served from the response cache.)
+
+![Declining instead of guessing](media/question_2.png)
+**Declining instead of guessing.** Here the retrieved passages did not address the question
+(they are listed under *Sources*, none cited), so the model answered `NOT_IN_SOURCES`
+rather than falling back on general knowledge. The *What was searched for* panel shows the
+standalone query produced by history-aware rewriting.
 
 ---
 
@@ -135,21 +145,24 @@ a technique for tens of millions of vectors.
 
 ### Retrieval quality by question type
 
-Where the system is currently weakest, on the golden set:
+Golden set, recall@10, first with the initial retriever (nomic, dense only) and then with the
+served configuration (embeddinggemma + hybrid RRF):
 
-| Type | n | Recall@10 |
-|---|---:|---:|
-| multi_hop | 4 | 0.375 |
-| comparison | 5 | 0.400 |
-| synthesis | 5 | 0.467 |
-| factual | 6 | 0.667 |
-| explanation | 10 | 0.900 |
-| definition | 5 | 1.000 |
-| specific_source | 5 | 1.000 |
+| Type | n | initial | served |
+|---|---:|---:|---:|
+| multi_hop | 4 | 0.375 | 0.500 |
+| comparison | 5 | 0.400 | 0.900 |
+| synthesis | 5 | 0.467 | 0.700 |
+| factual | 6 | 0.667 | 1.000 |
+| numerical | 6 | — | 0.833 |
+| explanation | 10 | 0.900 | 0.900 |
+| definition | 5 | 1.000 | 1.000 |
+| specific_source | 5 | 1.000 | 1.000 |
 
-The three worst types are precisely those needing evidence from **multiple
-passages**. That is the measured case for the multi-hop control flow in Phase
-6 — not an assumption.
+The weakest types are the ones that need evidence from **several passages**. Better retrieval
+lifted comparison and synthesis substantially. **Multi-hop remains the open weakness**: query
+decomposition was built to target it and made it worse (see below). Cells hold 4–10 questions,
+so treat them as indicative.
 
 ### Generation (Phase 5) · [report](reports/05_generators.md)
 
@@ -221,45 +234,32 @@ declined by the answer prompt's `NOT_IN_SOURCES` rule.
 
 ## Architecture
 
-```
-                    ┌──────────────┐
-   query ──────────▶│    ROUTER    │  Adaptive RAG
-                    └──┬────┬───┬──┘
-       no_retrieval    │    │   │   multi_hop
-            ┌──────────┘    │   └──────────┐
-            │          simple│              ▼
-            │               ▼           DECOMPOSE
-            │      ┌────────────────┐      │
-            │      │ QUERY TRANSFORM│◀─────┘
-            │      │ rewrite/HyDE/  │
-            │      │ expansion      │
-            │      └───────┬────────┘
-            │              ▼
-            │      ┌───────────────────────────┐
-            │      │  HYBRID RETRIEVE          │
-            │      │  dense (FAISS/Chroma)     │
-            │      │       +  BM25             │
-            │      │       ↓  RRF fusion       │
-            │      └───────┬───────────────────┘
-            │              ▼
-            │         RERANK (cross-encoder)
-            │              ▼
-            │         GRADE DOCS ─── CRAG
-            │           ╱      ╲
-            │       ok ╱        ╲ bad ──▶ rewrite ──┐ (cycle)
-            │         ▼                             │
-            │      GENERATE ◀───────────────────────┘
-            │         ▼
-            │      GROUNDEDNESS CHECK ─── Self-RAG
-            │         ▼
-            └──────▶ ANSWER + citations
-```
+![System architecture](media/architecture.svg)
 
-**Key design choice:** CRAG, Self-RAG, Adaptive RAG and multi-hop are *not* four separate
-pipelines. They are control flow over one shared retrieval core — which is why this uses
-**LangGraph** (cycles, conditional edges) rather than linear LangChain chains. Each is a
-node that can be toggled off, so "which advanced RAG method is best?" is answered by an
-**ablation study**, not by four parallel implementations.
+**Offline**, the six PDFs are parsed with PyMuPDF (using each book's embedded table of
+contents), cleaned, and cut into 5,796 TOC-aware chunks, each tagged with book, chapter,
+section and page. The chunks are indexed twice: dense (embeddinggemma vectors, exact search)
+and lexical (BM25).
+
+**On every chat turn**, the FastAPI server screens the message (prompt-injection patterns on
+every turn, a scope check on a session's first turn) and runs a LangGraph graph:
+
+1. **start_turn**: reset the per-turn state carried by the checkpointer.
+2. **condense**: rewrite a follow-up such as *"why does it work better?"* into a standalone
+   question using the conversation history (skipped on the first turn).
+3. **hybrid retrieve**: dense and BM25 rankings fused with Reciprocal Rank Fusion, top 20.
+4. **assemble**: the top 10 chunks (at most 5,300 tokens) become numbered sources `[S1]…[S10]`.
+5. **generate**: gpt-oss:20b must cite `[S#]` for every claim or answer `NOT_IN_SOURCES`.
+6. **verify**: every citation must resolve to a supplied source; any that do not are flagged.
+
+Citations are expanded for display from chunk metadata, never from model output, so a
+rendered citation cannot be invented. Conversation state is checkpointed to SQLite per session.
+
+**Key design choice:** CRAG, query decomposition, Self-RAG and adaptive routing are not
+separate pipelines. They are control flow over one retrieval core, which is why this uses
+**LangGraph** (cycles, conditional edges) rather than linear chains. CRAG and decomposition
+were built as toggleable nodes on the same graph and ablated against the baseline. Neither
+improved results, so the served graph adds conversation memory only.
 
 ---
 
@@ -267,82 +267,165 @@ node that can be toggled off, so "which advanced RAG method is best?" is answere
 
 | Layer | Choice | Why |
 |---|---|---|
-| Parsing | *pending Phase 1* | PyMuPDF / pdfplumber / pypdf benchmarked on extraction quality |
-| Chunking | *pending Phase 4* | recursive / semantic / parent-child |
-| Embedding | *pending Phase 4* | nomic / bge-m3 / embeddinggemma / mxbai |
-| ANN experiments | FAISS | only library exposing Flat/HNSW/IVF/PQ on identical vectors |
-| Serving store | Chroma | persistence, metadata filtering, incremental adds |
-| Lexical | BM25 | exact-term matching that embeddings blur |
-| Orchestration | LangGraph | advanced RAG needs cycles |
-| Generation | Ollama (local + cloud) | 3–4B local, `gpt-oss` cloud |
-| Evaluation | DeepEval + GEval + LangSmith | component → RAG triad → application |
-| API / UI | FastAPI + Streamlit | eval harness hits the same endpoint as the UI |
+| Parsing | **PyMuPDF**, using each book's embedded TOC | Best of four parsers (PyMuPDF, sorted PyMuPDF, pdfplumber, pypdf) on a pre-registered rubric. pdfplumber merged words together (`forthecancertreatment…`), which no automatic metric caught; human review did ([report](reports/01b_parser_decision.md)) |
+| Cleaning | header/footer stripping, de-hyphenation, page-offset detection | Citations use the page number printed in the book, not the PDF page index |
+| Chunking | **TOC-aware recursive**: 512 tokens, 64 overlap, never crossing a section boundary | Recursive, semantic and parent-child showed **no significant difference** (239–243 of 250 tied). Recursive builds in seconds and keeps chunks within the embedder's context; semantic chunks reached 8,097 tokens ([report](reports/04e_chunker_bakeoff_synthetic.md)) |
+| Embedding | **embeddinggemma** (768-d) via Ollama | Beat nomic and mxbai on MRR under hybrid retrieval (p ≤ 0.004); tied bge-m3 with half the latency and 25% less index memory; ranking unchanged by quantisation ([report](reports/04b_embedder_bakeoff_hybrid_rrf_synthetic.md)) |
+| Vector search | Exact inner product (NumPy); FAISS for the index benchmark | At 5.8k vectors exact search takes ~1 ms. HNSW, IVF and PQ were benchmarked in FAISS ([report](reports/04a_ann_lab.md)) |
+| Lexical | BM25 (`rank-bm25`, hyphen-aware tokenizer) | Exact-term matching (`ReLU`, `k-means`) that embeddings blur |
+| Fusion | Reciprocal Rank Fusion, k = 60 | +5.3 MRR over dense alone; tied weighted fusion but has no parameter to tune |
+| Orchestration | LangGraph + SQLite checkpointer | Cyclic control flow, and conversation memory persisted per session |
+| Generation | **gpt-oss:20b** via Ollama Cloud | Faithfulness 0.90 on human labels vs 0.50 for llama3.2:3b; 6.6 s p50 ([report](reports/05_generators.md)) |
+| Evaluation | Judge-free retrieval metrics · gpt-oss:120b faithfulness judge, validated on human labels · paired significance tests | See [Evaluation design](#evaluation-design) |
+| API / UI | FastAPI + Streamlit | The UI and the evaluation harness call the same `/chat` endpoint |
 
 ---
 
 ## Evaluation design
 
-Three levels, each answering a different question:
+**Datasets.** A hand-curated **golden set of 50** questions across ten types, including
+cross-document, ambiguous and unanswerable ones, each labelled with the `(book, page_range)`
+where the answer lives. Plus a **synthetic set of 250** single-hop questions, each labelled by
+the chunk it was generated from, used to *rank* configurations with more statistical power,
+never to report absolute quality.
 
-**1. Component** — *is the retriever or the generator at fault?*
-Contextual recall/precision/relevancy for retrieval; faithfulness and answer relevancy for
-generation. Requires ground-truth **contexts**, not just answers — without them a failure
-cannot be attributed.
+**1. Retrieval, with no LLM judge.** recall@k, precision@k, MRR and nDCG@10, scored by overlap
+between retrieved chunks and the labelled pages. This is reproducible to the fourth decimal,
+and cheap enough to sweep every configuration.
 
-**2. RAG Triad** — *is the pipeline internally consistent?*
+**2. Generation.** Judge-free checks come first: every `[S#]` citation must resolve to a supplied
+source; refusals must happen on unanswerable questions and only there; answers must not leak
+reasoning or exceed the length limit. Then **faithfulness**: a cloud judge (gpt-oss:120b) decides,
+citation by citation, whether the source supports the claim attached to it.
 
-```
-            Question
-           ╱        ╲
- Contextual          Answer
- Relevancy           Relevance
-         ╲          ╱
-  Context ──────── Answer
-        Faithfulness
-```
+**3. Application.** An end-to-end acceptance test through the served API (cited answer,
+pronoun follow-up, cross-book question, unanswerable, off-topic, prompt injection, **7/7**).
+It is complemented by guardrail calibration (false blocks on real questions against catches on
+off-topic and injection prompts) and latency.
 
-**3. Application** — *is it good, safe and operable?*
-Quality (correctness, completeness, explanation style via GEval) · Safety (toxicity, PII
-leakage, scope adherence) · Operations (latency p50/p95, token cost, error rate).
-
-Every run is written to `evaluation/results.db`, keyed by config hash + git SHA, so
-regressions stay visible across the project's history.
+**Statistics.** Every configuration answers the same questions, so comparisons are **paired**:
+a bootstrap confidence interval plus an exact sign test, Bonferroni-corrected across pairs.
+Every run is appended to `evaluation/results.db`, keyed by config hash and git SHA, so
+regressions stay visible.
 
 ### Two methodological commitments
 
 - **Ground truth is labelled by `(book, page_range)`, never by chunk ID.** Chunk IDs change
   with every chunking strategy; page ranges do not. This keeps one golden set valid across
   every experiment.
-- **The judge is never the model being judged.** LLM judges exhibit self-preference bias —
-  they score outputs resembling their own higher, and are blind to shared failure modes. Any
-  same-family row is flagged and excluded from headline rankings.
+- **A judge is validated before it is trusted.** LLM judges can favour outputs from their
+  own model family. The production generator (gpt-oss:20b) and the only free cloud judge
+  (gpt-oss:120b) share a family, so the judge was checked against 28 blind human labels.
+  It showed no self-preference (κ 0.815 on gpt-oss answers, and it never over-credited
+  them); if anything it was lenient toward the *other* family ([report](reports/08_judge_validation.md)).
 
 ---
 
-## Setup
+## Setup and installation
+
+### Prerequisites
+
+- **Python 3.11**
+- **[Ollama](https://ollama.com)**, which serves local embeddings and cloud generation
+- **~2 GB of free RAM** while running, and ~1 GB of disk for the local embedding model
+- The six textbook PDFs placed in `data/raw/`. They are copyrighted and not included.
+
+### 1. Clone and create the environment
 
 ```bash
+git clone https://github.com/<your-username>/<repo-name>.git
+cd <repo-name>
+
 python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements/base.txt -r requirements/retrieval.txt
-pip install -r requirements/graph.txt -r requirements/serve.txt
-python -m src.ingest.pipeline                 # parse + chunk data/raw/*.pdf
-python -m evaluation.retrieval_lab --embed-only   # or the Colab notebook
+.venv\Scripts\activate            # Windows
+# source .venv/bin/activate       # macOS / Linux
+
+pip install -r requirements/base.txt -r requirements/llm.txt
+pip install -r requirements/retrieval.txt -r requirements/graph.txt -r requirements/serve.txt
 ```
 
-Cloud models need `ollama signin` and a **`:cloud`** tag suffix. Only the `gpt-oss`
-family is on the free tier.
+`requirements/rerank.txt` (CPU PyTorch + sentence-transformers) is only needed to reproduce the
+reranker experiment. The served chatbot does not use it.
+
+### 2. Pull the models
+
+```bash
+ollama pull embeddinggemma        # local embedding model (~620 MB)
+ollama signin                     # the generator runs on Ollama Cloud
+ollama pull gpt-oss:20b-cloud     # cloud models need the ":cloud" suffix
+```
+
+Only the `gpt-oss` family is on Ollama Cloud's free tier.
+
+### 3. Build the index (once)
+
+```bash
+python -m src.ingest.pipeline                                          # parse, clean, chunk data/raw/*.pdf
+python -m evaluation.retrieval_lab --embed-only --embedders embeddinggemma  # embed the chunks
+```
+
+Embedding 5,796 chunks takes ~50 minutes on a CPU. `notebooks/embed_colab.ipynb` does the
+same on a free Colab GPU in a few minutes; import its output with
+`python scripts/import_colab_vectors.py <path-to-zip>`.
+
+---
+
+## How to run
+
+Open **three terminals** in the project root and activate the virtual environment in each
+(`.venv\Scripts\activate` on Windows).
+
+**Terminal 1: Ollama.** Skip this if the Ollama desktop app is already running.
+
+```bash
+ollama serve
+```
+
+**Terminal 2: backend (FastAPI).**
+
+```bash
+uvicorn src.serve.api:app --port 8000
+```
+
+Wait until the index has loaded; `http://127.0.0.1:8000/health` returns `"status": "ok"`.
+The API also serves interactive docs at `http://127.0.0.1:8000/docs`.
+
+**Terminal 3: frontend (Streamlit).**
+
+```bash
+streamlit run app/streamlit_app.py
+```
+
+This opens the chat UI at `http://localhost:8501`. It talks to the backend at
+`http://127.0.0.1:8000` by default; set the `RAG_API` environment variable to point it elsewhere.
+
+**Optional: end-to-end check.** With the backend running, in a fourth terminal:
+
+```bash
+python scripts/acceptance_test.py   # expects 7/7
+```
+
+**Tests:** `pytest -q`
+
+**If requests hang:** check free memory first. On a 7.4 GB machine with other heavy
+applications open, the operating system starts swapping and every model call stalls. Keep
+about 2 GB free.
 
 ---
 
 ## Repository layout
 
 ```
-configs/      experiment.yaml (the switchboard) + models.yaml (role → model registry)
-src/          ingest · embed · index · retrieve · transform · graph · guardrails · serve
-evaluation/   component · triad · application + results.db regression store
-reports/      numbered findings — one per phase, each justifying a config value
+app/          Streamlit chat UI
+configs/      experiment.yaml (every decision) · models.yaml · corpus.yaml · prompts/
+src/          ingest · embed · index · retrieve · generate · graph · guardrails · llm · serve
+evaluation/   retrieval, generation, graph, memory and guardrail labs · significance tests
+              · results.db regression store
+scripts/      acceptance test · Colab export/import · Ollama launcher
+notebooks/    Colab notebook for GPU embedding
+reports/      numbered findings, each justifying a config value
 data/golden/  the hand-labelled benchmark (committed; the corpus is not)
+media/        architecture diagram and screenshots
 ```
 
 `configs/experiment.yaml` tags every value `[UNTESTED]`, `[PRIOR]` or `[PROVEN]`. A reviewer

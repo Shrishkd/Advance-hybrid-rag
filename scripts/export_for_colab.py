@@ -6,9 +6,8 @@ Writes build/colab/<strategy>_texts.jsonl and a manifest.
 
 WHAT LEAVES THE MACHINE, AND WHY THAT IS A DECISION NOT A DETAIL
 ------------------------------------------------------------------
-`CLAUDE.md` states: "The corpus never leaves the machine. data/raw/ holds
-copyrighted textbooks." This script breaks that rule deliberately and under
-instruction, so it exports the MINIMUM that makes embedding possible:
+The project rule is that the corpus never leaves the machine: data/raw/ holds
+copyrighted textbooks. This script is a deliberate, narrow exception, so it exports the MINIMUM that makes embedding possible:
 
     exported      chunk text, and a line index
     NOT exported  book, author, chapter, section, page numbers, chunk ids

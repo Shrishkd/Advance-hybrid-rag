@@ -23,7 +23,7 @@ concept - that is the cheapest available sanity check on a search result.
 WHAT THIS IS FOR
 ----------------
 Three golden-set question types cannot be generated from a single chunk and
-must be written by hand (see generate_candidates.py):
+must be written manually (see generate_candidates.py):
 
   cross_document - needs the SAME topic located in TWO books, so you can ask
                    how their treatments differ. This tool finds both sides.

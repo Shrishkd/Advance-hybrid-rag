@@ -8,8 +8,8 @@
 WHY THIS IS REQUIRED, NOT OPTIONAL
 ----------------------------------
 D9 chose gpt-oss:20b-cloud as the generator. The only free judge is gpt-oss:120b -
-the SAME family - and CLAUDE.md forbids trusting a judge on its own family's output
-without checking (self-preference bias). Shrish accepted the same-family judge on one
+the SAME family - and a judge must not be trusted on its own family's output
+without checking (self-preference bias). The same-family judge was accepted on one
 condition: validate it against human labels first.
 
 THE DESIGN THAT MAKES THE CHECK MEAN SOMETHING

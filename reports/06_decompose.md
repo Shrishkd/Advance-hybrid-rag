@@ -47,4 +47,4 @@ wrong refusals 1 -> 4. It also damaged single-passage questions (factual 1.000 -
 
 **This run tested "decomposition by a 1B model", not decomposition.** The two were
 confounded. The next run changes ONLY the decomposition model (llama3.2:3b, still local,
-within CLAUDE.md's rule) to separate them.
+per the local-model rule for graph nodes) to separate them.

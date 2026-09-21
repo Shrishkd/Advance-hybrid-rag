@@ -97,14 +97,11 @@ def alpha_ratio(text: str) -> float:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# YOUR TURN — three metrics to implement
+# Text-quality metrics
 #
-# For each: read the docstring, check the worked example, then write the
-# body. The examples are executable tests — verify with:
+# Each docstring carries a worked example that runs as a doctest:
 #
 #     .venv\Scripts\python.exe -m pytest src/ingest/quality.py
-#
-# You are done when that reports 5 passed, 0 failed.
 # ═══════════════════════════════════════════════════════════════════════
 
 def single_char_token_ratio(text: str) -> float:

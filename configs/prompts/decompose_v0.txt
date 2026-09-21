@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────
 # DECOMPOSITION PROMPT — v0
 #
-# SHRISH OWNS THIS FILE (prompt templates are his column in CLAUDE.md). Draft.
+# Prompt templates are versioned config: copy to _v1 and change one thing to iterate.
 #
 # PURPOSE: split a question that needs several passages into search queries,
 # one per passage. Each line becomes a SEPARATE retrieval; results are fused.

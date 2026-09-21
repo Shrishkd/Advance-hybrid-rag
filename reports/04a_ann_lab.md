@@ -44,7 +44,7 @@ argument. The embedder bake-off, chunker bake-off, hybrid fusion and reranker ex
 all compare *retrieval quality*. Running them on an approximate index confounds index
 error with the variable under test — an IVF at 0.9885 injects ~1.2% noise into comparisons
 whose real effects may be only a few points, and we could not tell which caused what.
-`CLAUDE.md`: **one variable at a time**. Flat contributes exactly zero error.
+The project rule is **one variable at a time**. Flat contributes exactly zero error.
 
 **3. Nothing forces the trade yet.** 17.8 MB of index against a 7.4 GB machine. Flat also
 supports exact incremental adds with no retraining — relevant because the 7th document

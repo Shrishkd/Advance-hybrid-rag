@@ -4,7 +4,7 @@
 # that are dead weight on this machine - no usable GPU. The +cpu index cuts the
 # download to ~200 MB.
 #
-# RAM cost, stated up front per CLAUDE.md:
+# RAM cost, stated up front:
 #   ms-marco-MiniLM-L-6-v2   22M params  ~90 MB    runs fine here
 #   bge-reranker-v2-m3      568M params  ~2.2 GB   Colab, not this box
 --extra-index-url https://download.pytorch.org/whl/cpu

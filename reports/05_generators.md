@@ -69,7 +69,7 @@ the judge was clearly right on three and debatable on one.
 
 ### Why the gpt-oss faithfulness number is credible despite the same-family judge
 
-`CLAUDE.md`: the judge is never the generator. gpt-oss:120b judging gpt-oss:20b is the
+A judge must not grade its own model family unchecked. gpt-oss:120b judging gpt-oss:20b is the
 self-preference case, and its 0.87 alone would not be trustworthy.
 
 But placement is measured by regex, not by any model: **gpt-oss attaches citations to
@@ -95,6 +95,5 @@ in your free usage", tested 2026-09-21). So:
 ### Still unmeasured, and cheap
 
 - **Prompt v1** with an explicit inline-citation example may fix llama's dumping, and a
-  clarified refusal rule may cut gpt-oss's wrong refusals. Both are prompt changes -
-  Shrish's column.
+  clarified refusal rule may cut gpt-oss's wrong refusals. Both are prompt changes.
 - **top_n sweep** - latency is prefill-dominated, so fewer chunks cuts llama's 61 s.

@@ -41,11 +41,11 @@ THREE THINGS THE DEFAULTS ARE QUIETLY ASSUMING
    larger chunk may well win. That is a Phase 4 sweep, not a decision.
 
 ────────────────────────────────────────────────────────────────────────
-WHO WRITES WHAT
+WHAT LIVES HERE
 ────────────────────────────────────────────────────────────────────────
-Claude:  Chunk/Span types, tokenizer, sentence splitter, metadata binding,
-         registry plumbing.
-Shrish:  the three split_* functions — where the boundaries actually go.
+Plumbing:    Chunk/Span types, tokenizer, sentence splitter, metadata binding,
+             strategy registry.
+Algorithms:  the three split_* functions — where the boundaries actually go.
 """
 
 from __future__ import annotations
@@ -137,7 +137,7 @@ Embedder = Callable[[list[str]], list[list[float]]]
 
 
 # ───────────────────────────────────────────────────────────────────────
-# Plumbing (Claude's)
+# Plumbing
 # ───────────────────────────────────────────────────────────────────────
 
 @lru_cache(maxsize=1)
@@ -572,7 +572,7 @@ def split_semantic(
 
 
 # ───────────────────────────────────────────────────────────────────────
-# Registry (Claude's) — resolves configs/experiment.yaml chunking.strategy
+# Registry — resolves configs/experiment.yaml chunking.strategy
 # ───────────────────────────────────────────────────────────────────────
 
 CHUNKERS: dict[str, str] = {

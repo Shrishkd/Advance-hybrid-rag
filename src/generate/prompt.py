@@ -2,7 +2,7 @@
 
 WHY THE PROMPT LIVES IN A FILE
 ------------------------------
-`CLAUDE.md`: "Nothing is pre-decided... every architectural choice is earned."
+Nothing in this project is pre-decided: every architectural choice is earned.
 A prompt is an architectural choice. Buried in a Python string it becomes
 invisible, unversioned and untestable; as `configs/prompts/answer_v<n>.txt` it
 is a config value that can be swapped, diffed and benchmarked exactly like

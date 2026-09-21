@@ -33,7 +33,7 @@ them honestly, and a bad question of these types is worse than none:
                    asks for clarification instead of guessing. Requires
                    intent a generator does not have.
 
-These are Shrish's to write by hand.
+These three types live in data/golden/manual.jsonl and are merged in by curate.py.
 
 CURATION CONTRACT
 -----------------

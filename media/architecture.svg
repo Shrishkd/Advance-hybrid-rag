@@ -1,0 +1,168 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 800" width="1400" height="800" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <style>
+      .t  { font-size: 15px; font-weight: 700; fill: #0f172a; }
+      .s  { font-size: 12px; fill: #334155; }
+      .h  { font-size: 17px; font-weight: 700; fill: #0f172a; }
+      .lane { font-size: 14px; font-weight: 700; fill: #475569; letter-spacing: .3px; }
+      .note { font-size: 11.5px; fill: #64748b; font-style: italic; }
+      .ln { stroke: #475569; stroke-width: 1.8; fill: none; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1400" height="800" fill="#ffffff"/>
+  <text x="40" y="40" class="h" font-size="21">Advanced Hybrid RAG — System Architecture</text>
+
+  <!-- ══════════════ LANE 1: OFFLINE INDEXING ══════════════ -->
+  <text x="40" y="82" class="lane">① OFFLINE INDEXING — run once per corpus change</text>
+
+  <rect x="40" y="100" width="190" height="90" rx="10" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.6"/>
+  <text x="135" y="130" class="t" text-anchor="middle">6 ML textbooks</text>
+  <text x="135" y="152" class="s" text-anchor="middle">PDF · ~3,500 pages</text>
+  <text x="135" y="170" class="s" text-anchor="middle">+ incremental manifest</text>
+
+  <rect x="270" y="100" width="190" height="90" rx="10" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.6"/>
+  <text x="365" y="130" class="t" text-anchor="middle">Parse</text>
+  <text x="365" y="152" class="s" text-anchor="middle">PyMuPDF</text>
+  <text x="365" y="170" class="s" text-anchor="middle">+ embedded TOC tree</text>
+
+  <rect x="500" y="100" width="190" height="90" rx="10" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.6"/>
+  <text x="595" y="130" class="t" text-anchor="middle">Clean</text>
+  <text x="595" y="152" class="s" text-anchor="middle">strip headers / footers</text>
+  <text x="595" y="170" class="s" text-anchor="middle">de-hyphenate · page offsets</text>
+
+  <rect x="730" y="100" width="190" height="90" rx="10" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.6"/>
+  <text x="825" y="126" class="t" text-anchor="middle">Chunk</text>
+  <text x="825" y="146" class="s" text-anchor="middle">TOC-aware recursive</text>
+  <text x="825" y="162" class="s" text-anchor="middle">512 tokens · 64 overlap</text>
+  <text x="825" y="178" class="s" text-anchor="middle">5,796 chunks + metadata</text>
+
+  <rect x="960" y="100" width="250" height="42" rx="8" fill="#f1f3f5" stroke="#6b7280" stroke-width="1.6"/>
+  <text x="1085" y="118" class="t" text-anchor="middle" font-size="13.5">Dense index</text>
+  <text x="1085" y="134" class="s" text-anchor="middle" font-size="11.5">embeddinggemma · 768-d · flat (exact)</text>
+
+  <rect x="960" y="150" width="250" height="42" rx="8" fill="#f1f3f5" stroke="#6b7280" stroke-width="1.6"/>
+  <text x="1085" y="168" class="t" text-anchor="middle" font-size="13.5">Lexical index</text>
+  <text x="1085" y="184" class="s" text-anchor="middle" font-size="11.5">BM25 · hyphen-aware tokens</text>
+
+  <line x1="230" y1="145" x2="268" y2="145" class="ln" marker-end="url(#arr)"/>
+  <line x1="460" y1="145" x2="498" y2="145" class="ln" marker-end="url(#arr)"/>
+  <line x1="690" y1="145" x2="728" y2="145" class="ln" marker-end="url(#arr)"/>
+  <path d="M920,145 L940,145 L940,121 L958,121" class="ln" marker-end="url(#arr)"/>
+  <path d="M940,145 L940,171 L958,171" class="ln" marker-end="url(#arr)"/>
+
+  <text x="1228" y="130" class="note">book · chapter ·</text>
+  <text x="1228" y="146" class="note">section · page</text>
+  <text x="1228" y="162" class="note">on every chunk</text>
+
+  <!-- index feeds retrieval -->
+  <text x="1198" y="236" class="note">loaded once</text>
+  <text x="1198" y="251" class="note">at startup</text>
+
+  <!-- ══════════════ LANE 2: ONLINE QUERY PATH ══════════════ -->
+  <text x="40" y="266" class="lane">② ONLINE — every chat turn</text>
+
+  <rect x="40" y="300" width="190" height="80" rx="10" fill="#eef2f7" stroke="#334155" stroke-width="1.6"/>
+  <text x="135" y="326" class="t" text-anchor="middle">Streamlit UI</text>
+  <text x="135" y="346" class="s" text-anchor="middle">chat · sources panel</text>
+  <text x="135" y="363" class="s" text-anchor="middle">"what was searched for"</text>
+
+  <rect x="260" y="300" width="190" height="80" rx="10" fill="#eef2f7" stroke="#334155" stroke-width="1.6"/>
+  <text x="355" y="326" class="t" text-anchor="middle">FastAPI  /chat</text>
+  <text x="355" y="346" class="s" text-anchor="middle">session id → thread</text>
+  <text x="355" y="363" class="s" text-anchor="middle">/health · /config</text>
+
+  <rect x="480" y="300" width="210" height="80" rx="10" fill="#fff4e0" stroke="#d98a00" stroke-width="1.6"/>
+  <text x="585" y="326" class="t" text-anchor="middle">Input guard</text>
+  <text x="585" y="346" class="s" text-anchor="middle">injection patterns (every turn)</text>
+  <text x="585" y="363" class="s" text-anchor="middle">scope check (first turn)</text>
+
+  <line x1="230" y1="340" x2="258" y2="340" class="ln" marker-end="url(#arr)"/>
+  <line x1="450" y1="340" x2="478" y2="340" class="ln" marker-end="url(#arr)"/>
+
+  <!-- LangGraph container -->
+  <text x="720" y="266" class="lane" fill="#7a4fd0">LangGraph — one graph, toggleable nodes</text>
+  <rect x="720" y="280" width="650" height="280" rx="14" fill="#fbf9ff" stroke="#7a4fd0" stroke-width="1.8"/>
+
+  <!-- arrows entering the container are drawn AFTER it, or its fill hides their heads -->
+  <line x1="690" y1="340" x2="738" y2="340" class="ln" marker-end="url(#arr)"/>
+  <line x1="1190" y1="192" x2="1190" y2="298" class="ln" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+  <!-- row 1: start_turn → condense → retrieve -->
+  <rect x="740" y="300" width="120" height="80" rx="10" fill="#f1eafb" stroke="#7a4fd0" stroke-width="1.6"/>
+  <text x="800" y="332" class="t" text-anchor="middle">start_turn</text>
+  <text x="800" y="352" class="s" text-anchor="middle">reset per-turn</text>
+  <text x="800" y="367" class="s" text-anchor="middle">state</text>
+
+  <rect x="880" y="300" width="220" height="80" rx="10" fill="#e6f6ec" stroke="#2e9d5b" stroke-width="1.6"/>
+  <text x="990" y="324" class="t" text-anchor="middle">condense</text>
+  <text x="990" y="344" class="s" text-anchor="middle">history → standalone question</text>
+  <text x="990" y="361" class="s" text-anchor="middle">gpt-oss · skipped on 1st turn</text>
+
+  <rect x="1120" y="300" width="230" height="80" rx="10" fill="#f1eafb" stroke="#7a4fd0" stroke-width="1.6"/>
+  <text x="1235" y="324" class="t" text-anchor="middle">Hybrid retrieve</text>
+  <text x="1235" y="344" class="s" text-anchor="middle">dense + BM25 → RRF (k = 60)</text>
+  <text x="1235" y="361" class="s" text-anchor="middle">top 20 chunks</text>
+
+  <line x1="860" y1="340" x2="878" y2="340" class="ln" marker-end="url(#arr)"/>
+  <line x1="1100" y1="340" x2="1118" y2="340" class="ln" marker-end="url(#arr)"/>
+
+  <!-- row 2 (right to left): assemble → generate → verify -->
+  <rect x="1140" y="430" width="210" height="80" rx="10" fill="#f1eafb" stroke="#7a4fd0" stroke-width="1.6"/>
+  <text x="1245" y="454" class="t" text-anchor="middle">Assemble context</text>
+  <text x="1245" y="474" class="s" text-anchor="middle">top 10 · ≤ 5,300 tokens</text>
+  <text x="1245" y="491" class="s" text-anchor="middle">sources tagged [S1] … [S10]</text>
+
+  <rect x="915" y="430" width="200" height="80" rx="10" fill="#e6f6ec" stroke="#2e9d5b" stroke-width="1.6"/>
+  <text x="1015" y="454" class="t" text-anchor="middle">Generate</text>
+  <text x="1015" y="474" class="s" text-anchor="middle">gpt-oss:20b-cloud</text>
+  <text x="1015" y="491" class="s" text-anchor="middle">cite [S#] or NOT_IN_SOURCES</text>
+
+  <rect x="740" y="430" width="150" height="80" rx="10" fill="#f1eafb" stroke="#7a4fd0" stroke-width="1.6"/>
+  <text x="815" y="454" class="t" text-anchor="middle">Verify citations</text>
+  <text x="815" y="474" class="s" text-anchor="middle">every [S#] must resolve</text>
+  <text x="815" y="491" class="s" text-anchor="middle">flag fabrications</text>
+
+  <line x1="1245" y1="380" x2="1245" y2="428" class="ln" marker-end="url(#arr)"/>
+  <line x1="1140" y1="470" x2="1117" y2="470" class="ln" marker-end="url(#arr)"/>
+  <line x1="915" y1="470" x2="892" y2="470" class="ln" marker-end="url(#arr)"/>
+
+  <!-- CRAG: built, disabled -->
+  <rect x="1140" y="522" width="210" height="28" rx="6" fill="#ffffff" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="5 4"/>
+  <text x="1245" y="541" class="note" text-anchor="middle">CRAG · built, off (no measured gain)</text>
+
+  <!-- memory -->
+  <rect x="880" y="585" width="220" height="60" rx="8" fill="#f1f3f5" stroke="#6b7280" stroke-width="1.6"/>
+  <text x="990" y="609" class="t" text-anchor="middle" font-size="14">Conversation memory</text>
+  <text x="990" y="628" class="s" text-anchor="middle">SQLite checkpointer · per session</text>
+  <line x1="990" y1="585" x2="990" y2="562" class="ln" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+
+  <!-- output path -->
+  <path d="M815,510 L815,655 L692,655" class="ln" marker-end="url(#arr)"/>
+
+  <rect x="480" y="620" width="210" height="70" rx="10" fill="#fff4e0" stroke="#d98a00" stroke-width="1.6"/>
+  <text x="585" y="648" class="t" text-anchor="middle">Output guard</text>
+  <text x="585" y="668" class="s" text-anchor="middle">PII redaction</text>
+
+  <rect x="40" y="620" width="190" height="70" rx="10" fill="#eef2f7" stroke="#334155" stroke-width="1.6"/>
+  <text x="135" y="646" class="t" text-anchor="middle">Cited answer</text>
+  <text x="135" y="666" class="s" text-anchor="middle">[S3] → (Bishop, 7.1, p. 320)</text>
+
+  <line x1="480" y1="655" x2="232" y2="655" class="ln" marker-end="url(#arr)"/>
+  <line x1="135" y1="620" x2="135" y2="382" class="ln" marker-end="url(#arr)"/>
+  <text x="143" y="505" class="note">rendered</text>
+
+  <!-- ══════════════ LEGEND ══════════════ -->
+  <line x1="40" y1="718" x2="1360" y2="718" stroke="#e2e8f0" stroke-width="1.2"/>
+  <g font-size="12.5" fill="#334155">
+    <rect x="40"  y="738" width="16" height="16" rx="3" fill="#e8f0fe" stroke="#3b6fd8"/><text x="64"  y="751">Indexing</text>
+    <rect x="150" y="738" width="16" height="16" rx="3" fill="#f1eafb" stroke="#7a4fd0"/><text x="174" y="751">Graph node</text>
+    <rect x="276" y="738" width="16" height="16" rx="3" fill="#e6f6ec" stroke="#2e9d5b"/><text x="300" y="751">LLM call (Ollama Cloud)</text>
+    <rect x="478" y="738" width="16" height="16" rx="3" fill="#fff4e0" stroke="#d98a00"/><text x="502" y="751">Guardrail</text>
+    <rect x="590" y="738" width="16" height="16" rx="3" fill="#f1f3f5" stroke="#6b7280"/><text x="614" y="751">Storage</text>
+    <rect x="690" y="738" width="16" height="16" rx="3" fill="#ffffff" stroke="#94a3b8" stroke-dasharray="4 3"/><text x="714" y="751">Built, disabled</text>
+    <text x="850" y="751" fill="#64748b">Embeddings via local Ollama · every setting chosen by benchmark (reports/)</text>
+  </g>
+</svg>
