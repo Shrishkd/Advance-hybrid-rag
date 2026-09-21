@@ -8,8 +8,7 @@ revisit them. This one treats each of those as an open question, benchmarks the 
 against a hand-labelled golden dataset, and ships the winner. The tables below are the
 project; the chatbot is what falls out of them.
 
-> **Status:** working chatbot. Phases 0–7 and 9 done; Phase 8 (judge validation) needs
-> hand labels; Phase 10 (fine-tuning) deferred. Every served setting traces to a report in
+> **Status:** complete. Phases 0–9 done; Phase 10 (fine-tuning) deferred with reasons. Every served setting traces to a report in
 > [`reports/`](reports). Live board: [`plan.md`](plan.md).
 
 ## Run it
@@ -165,8 +164,10 @@ Each measurement layer changed who looked best. `grounded_rate` rated qwen3:4b p
 it was 14 truncated reasoning monologues that "cited" `[S1]`. `usable` rated llama3.2:3b
 perfect — until the faithfulness judge found 29% of its answers carried an unsupported
 citation, and a regex (no judge) showed why: it prepends every source tag instead of
-attaching each to its claim. ¹ Judged by gpt-oss:120b — **same family**, hence Phase 8's
-required judge validation.
+attaching each to its claim. ¹ Judged by gpt-oss:120b, the same family. **Validated
+against blind human labels** ([report](reports/08_judge_validation.md)): no
+self-preference (κ 0.815 on gpt-oss answers); the judge was instead *lenient toward
+llama*. By human labels the gap is wider: **gpt-oss 0.90, llama3.2:3b 0.50**.
 
 ### RAG control flow (Phase 6)
 
