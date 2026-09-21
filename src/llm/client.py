@@ -101,6 +101,13 @@ class ResponseCache:
                    created_at REAL NOT NULL
                )"""
         )
+        # MIGRATION: latency was not stored originally, so a cache hit could
+        # only report 0 ms - and the first D9 table showed a 3B model on CPU
+        # answering instantly. Rows written before this column existed keep
+        # NULL, which reads as "unknown", never as "fast".
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(cache)")}
+        if "latency_ms" not in cols:
+            self.conn.execute("ALTER TABLE cache ADD COLUMN latency_ms REAL")
         self.conn.commit()
 
     @staticmethod
@@ -110,16 +117,22 @@ class ResponseCache:
         )
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
-    def get(self, key: str) -> tuple[str, str] | None:
+    def get(self, key: str) -> tuple[str, str, float | None] | None:
+        """(response, reasoning, original_latency_ms or None)."""
         row = self.conn.execute(
-            "SELECT response, reasoning FROM cache WHERE key = ?", (key,)
+            "SELECT response, reasoning, latency_ms FROM cache WHERE key = ?", (key,)
         ).fetchone()
-        return (row[0], row[1]) if row else None
+        return (row[0], row[1], row[2]) if row else None
 
-    def put(self, key: str, model: str, prompt: str, response: str, reasoning: str) -> None:
+    def put(self, key: str, model: str, prompt: str, response: str,
+            reasoning: str, latency_ms: float | None = None) -> None:
+        # Named columns, not positional VALUES: the schema has grown once
+        # already and positional inserts break silently when it grows again.
         self.conn.execute(
-            "INSERT OR REPLACE INTO cache VALUES (?,?,?,?,?,?)",
-            (key, model, prompt, response, reasoning, time.time()),
+            "INSERT OR REPLACE INTO cache "
+            "(key, model, prompt, response, reasoning, created_at, latency_ms) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (key, model, prompt, response, reasoning, time.time(), latency_ms),
         )
         self.conn.commit()
 
@@ -152,6 +165,7 @@ class OllamaClient:
         max_tokens: int = 1024,
         think: bool = False,
         retry_on_empty: bool = True,
+        seed: int | None = None,
     ) -> LLMResponse:
         """One-shot chat completion.
 
@@ -168,13 +182,21 @@ class OllamaClient:
 
         params = {"temperature": temperature, "num_predict": max_tokens,
                   "system": system, "think": think}
+        if seed is not None:
+            # Added to the key only when set: including seed=None for every
+            # call would silently invalidate every entry already cached.
+            params["seed"] = seed
         key = ResponseCache.key(model, prompt, params)
 
         # `and hit[0]` guards against empties written by an older build,
         # before the no-empty rule below existed.
         if self.use_cache and (hit := self.cache.get(key)) and hit[0]:
             return LLMResponse(
-                text=hit[0], model=model, cached=True, latency_ms=0.0, reasoning=hit[1]
+                # The latency recorded at GENERATION time, or 0.0 when unknown
+                # (rows cached before latency was stored). Callers treat 0.0 as
+                # "no measurement", not as "instant".
+                text=hit[0], model=model, cached=True,
+                latency_ms=float(hit[2] or 0.0), reasoning=hit[1]
             )
 
         messages = ([{"role": "system", "content": system}] if system else []) + [
@@ -189,7 +211,8 @@ class OllamaClient:
                     model=model,
                     messages=messages,
                     think=think,
-                    options={"temperature": temperature, "num_predict": max_tokens},
+                    options={"temperature": temperature, "num_predict": max_tokens,
+                             **({"seed": seed} if seed is not None else {})},
                 )
                 break
 
@@ -240,7 +263,12 @@ class OllamaClient:
         # gpt-oss:120b-cloud returned 52 completion tokens, 201 chars of
         # reasoning, and an EMPTY answer. Silent, and downstream it looks like
         # the model had nothing to say rather than like a budget error.
-        if not text and reasoning:
+        # Trigger on ANY empty answer. The first version required `reasoning`
+        # to be non-empty - but gpt-oss has a DEGENERATE mode where it burns the
+        # whole budget (done_reason=length) and returns NEITHER reasoning NOR
+        # content. Those skipped the retry entirely and came back silently
+        # empty: 3 of 50 Phase 6 baseline answers.
+        if not text:
             # WARNING WAS NOT ENOUGH. This failure has now been hit three times
             # in three different callers - candidate generation, synthetic
             # question generation, and the Phase 5 generation lab, where it
@@ -254,17 +282,43 @@ class OllamaClient:
             #
             # Retry ONCE only: if tripling the budget still yields nothing, the
             # problem is not the budget and looping would burn tokens.
-            if retry_on_empty and max_tokens < 8192:
-                bigger = min(max_tokens * 3, 8192)
+            if retry_on_empty:
+                # Two failure modes, one retry that handles both:
+                #
+                #   overrun     - the reasoning trace needed more than the
+                #                 budget. More budget fixes it.
+                #   degenerate  - greedy decoding at temperature 0 locks into a
+                #                 repetition loop. Measured: 3/3 such prompts
+                #                 burned the FULL 8,192 tokens (100+ s each) and
+                #                 returned nothing; at temperature 0.8 all 3
+                #                 terminated normally. 0.4 did not escape.
+                #
+                # So: more budget AND temperature 0.8, with a FIXED seed so the
+                # recovery is reproducible. The budget is capped at 4,096 - a
+                # degenerate loop at 8,192 only fails more slowly.
+                bigger = min(max(max_tokens * 3, 2100), 4096)
+                escape_t = max(temperature, 0.8)
                 warnings.warn(
-                    f"{model}: empty answer after stripping {len(reasoning)} "
-                    f"chars of reasoning (max_tokens={max_tokens}); retrying "
-                    f"once at max_tokens={bigger}.",
+                    f"{model}: empty answer ({len(reasoning)} chars reasoning, "
+                    f"max_tokens={max_tokens}); retrying once at "
+                    f"max_tokens={bigger}, temperature={escape_t}, seed=7.",
                     stacklevel=2,
                 )
-                return self.chat(model, prompt, system=system,
-                                 temperature=temperature, max_tokens=bigger,
-                                 think=think, retry_on_empty=False)
+                resp = self.chat(model, prompt, system=system,
+                                 temperature=escape_t, max_tokens=bigger,
+                                 think=think, retry_on_empty=False, seed=7)
+                # Cache the recovered answer under the ORIGINAL key as well.
+                # Without this the original call - which came back empty and so
+                # was never cached - goes LIVE again on every replay, and a
+                # hosted model is not deterministic across calls even at
+                # temperature 0. Measured in Phase 6: 5 of 50 baseline answers
+                # (10%) changed between two runs of an identical config purely
+                # through this path. A 10% run-to-run noise floor would swamp
+                # the few-point effects Phase 6 exists to measure.
+                if self.use_cache and resp.text:
+                    self.cache.put(key, model, prompt, resp.text,
+                                   resp.reasoning, latency_ms=resp.latency_ms)
+                return resp
             warnings.warn(
                 f"{model}: STILL empty after retry at max_tokens={max_tokens}. "
                 "Not a budget problem.",
@@ -277,7 +331,7 @@ class OllamaClient:
         # short-circuits the fix and returns nothing forever. That is how a
         # transient budget problem becomes a permanent one.
         if self.use_cache and text:
-            self.cache.put(key, model, prompt, text, reasoning)
+            self.cache.put(key, model, prompt, text, reasoning, latency_ms=latency)
 
         return LLMResponse(
             text=text,

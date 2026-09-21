@@ -1,0 +1,12 @@
+# Phase 6 — control flow.
+#
+# LangGraph, not LangChain chains: CRAG and Self-RAG are CYCLIC (grade -> retry
+# -> grade), and chains are linear. The checkpointer package gives conversation
+# memory as persisted graph state, replacing the deprecated
+# ConversationBufferMemory the original brief mentioned.
+#
+# RAM cost: negligible. These are orchestration libraries; the models they call
+# are the same Ollama processes already running.
+langgraph==0.2.60
+langgraph-checkpoint-sqlite==2.0.1
+langchain-core==0.3.28

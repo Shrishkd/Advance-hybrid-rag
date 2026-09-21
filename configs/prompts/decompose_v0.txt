@@ -1,0 +1,28 @@
+# ─────────────────────────────────────────────────────────────────────────
+# DECOMPOSITION PROMPT — v0
+#
+# SHRISH OWNS THIS FILE (prompt templates are his column in CLAUDE.md). Draft.
+#
+# PURPOSE: split a question that needs several passages into search queries,
+# one per passage. Each line becomes a SEPARATE retrieval; results are fused.
+#
+# LOAD-BEARING: output is one query per line, parsed by
+# src/graph/rag_graph.py:parse_subqueries. Placeholder: {question}
+#
+# The instruction to return the question UNCHANGED when it is simple matters:
+# splitting a single-passage question into fragments makes each fragment's
+# retrieval worse than the whole question's, which would make this node HURT
+# the types it is not meant for.
+# ─────────────────────────────────────────────────────────────────────────
+
+Rewrite the question below as search queries for a library of machine learning
+textbooks.
+
+- If the question asks about ONE thing, output the question unchanged, on one line.
+- If it needs information about SEVERAL things (a comparison, several steps, or
+  facts from different sources), output one short search query per thing,
+  at most 3, one per line.
+
+Output ONLY the queries, one per line. No numbering, no explanation.
+
+Question: {question}

@@ -8,9 +8,21 @@ revisit them. This one treats each of those as an open question, benchmarks the 
 against a hand-labelled golden dataset, and ships the winner. The tables below are the
 project; the chatbot is what falls out of them.
 
-> **Status:** Phase 4 of 10 — retrieval lab. Three decisions measured (D1, D4, D5), three in
-> flight. Empty cells below are honest: they mean *not yet measured*. See
-> [`plan.md`](plan.md) for the live status board.
+> **Status:** working chatbot. Phases 0–7 and 9 done; Phase 8 (judge validation) needs
+> hand labels; Phase 10 (fine-tuning) deferred. Every served setting traces to a report in
+> [`reports/`](reports). Live board: [`plan.md`](plan.md).
+
+## Run it
+
+```bash
+powershell -File scripts/start_ollama.ps1                 # models live on D:
+uvicorn src.serve.api:app --port 8000                     # the RAG API
+streamlit run app/streamlit_app.py                        # the chat UI
+python scripts/acceptance_test.py                         # end-to-end check: 7/7
+```
+
+Needs ~2 GB free RAM. On a 7.4 GB machine, close other heavy apps first: with two IDEs
+and a browser open, free RAM fell to 0.2 GB and every model call stalled.
 
 ---
 
@@ -33,38 +45,42 @@ project; the chatbot is what falls out of them.
 
 *Populated as each phase completes. Empty cells are honest — they mean "not yet measured".*
 
+### Every decision, and what earned it
+
+| | Decision | Evidence |
+|---|---|---|
+| D1 parser | `pymupdf` | pdfplumber collapsed word boundaries — **no metric caught it**; the human veto did |
+| D2 chunker | `recursive` | all 3 strategies measured, **none significant** (239–243/250 ties); chosen on build cost |
+| D3 embedder | `embeddinggemma` | +4 MRR over nomic/mxbai under hybrid (p≤0.004); ties bge-m3, wins every cost axis |
+| D4 index | `flat` | HNSW is lossless *and* 7.6× faster — flat kept as the zero-error measurement instrument |
+| D5 retrieval | `hybrid_rrf` | **+5.3 MRR, p<0.0001** vs dense |
+| D6 reranker | **none** | +4.2 recall@1 for 1–6 s/query; inside the noise band |
+| D9 generator | `gpt-oss:20b-cloud` | faithfulness 0.87 vs llama3.2:3b 0.70; 6.6 s vs 61 s |
+| context | top 10, ~5.3k tokens | wrong refusals 5 → 2 |
+| graph | **memory** only | turn-2 recall 0.083 → 0.917; decomposition rejected |
+
+Significance throughout is **paired** (bootstrap + sign test, Bonferroni-corrected) —
+every config answers the same questions, so "on how many did A beat B" is the test.
+
 ### Retrieval mode — D5 · [full report](reports/04c_hybrid_retrieval.md)
 
-Measured on 48 hand-labelled questions. Embedder `nomic`, chunker `recursive`,
-index `flat`. **No LLM judge** — every number comes from labelled
-`(book, page_range)` overlap, so these are reproducible to the fourth decimal.
+| Config (embeddinggemma, n=250) | Recall@10 | MRR |
+|---|---:|---:|
+| **hybrid_rrf** ✅ | 0.964 | **0.833** |
+| hybrid_weighted | 0.964 | 0.847 |
+| dense | 0.944 | 0.780 |
+| bm25 | 0.920 | 0.777 |
 
-| Config | Recall@5 | Recall@10 | Recall@20 | MRR | nDCG@10 | p50 |
-|---|---:|---:|---:|---:|---:|---:|
-| **hybrid_rrf** ✅ | 0.7639 | **0.8229** | 0.8438 | 0.6510 | **0.6930** | 144 ms |
-| hybrid_weighted | 0.7431 | 0.8160 | **0.8542** | **0.6521** | 0.6773 | 153 ms |
-| bm25 | 0.6597 | 0.7326 | 0.8229 | 0.5961 | 0.6164 | **51 ms** |
-| dense | 0.7049 | 0.7049 | 0.7778 | 0.6014 | 0.6222 | 104 ms |
+**A headline that did not survive.** Measured first with the weaker `nomic` embedder,
+hybrid beat dense by **+11.8 recall@10**. Re-run on the D3 winner, the recall gain
+**vanishes** (p=0.18, 241/250 ties). What survives is ranking: hybrid beats *both* of
+its own arms on MRR by ~5 points (p<0.0001). Fusion stops finding more once dense is
+good — it keeps ordering better.
 
-**Hybrid beats dense by +11.8 points of recall@10** — the first effect in this
-project comfortably clear of the ~5-point noise band at n=48.
-
-**The surprise: BM25 alone beats dense.** A lexical method from 1994, with no
-embedding model and a 1.3-second index build, outscores a 768-dimensional
-neural embedder — and runs twice as fast. Technical textbooks are full of
-tokens that must match *literally* (`ReLU`, `AdaGrad`, `L-BFGS`, `CKY`). Dense
-embeddings place `Adam` near `RMSProp` near `SGD`: correct semantics, wrong
-retrieval when the question names one of them.
-
-**Why fusing them works, visible in the table:** dense has `recall@5 ==
-recall@10` — ranks 6–10 contribute *nothing*; it either finds the passage in
-the top 5 or never. BM25 shows the mirror image, losing at k=5 and winning at
-k=10: better coverage, noisier ordering. Each arm fails where the other
-succeeds, which is exactly the condition under which fusion pays.
-
-RRF vs weighted fusion is a **genuine tie** (no gap above 1.1 points across
-four metrics). RRF wins on principle: it has no free parameter, while the
-weighted variant ran at an untuned `w_dense=0.5`.
+**BM25 alone beat dense** under nomic: technical textbooks are full of tokens that must
+match literally (`ReLU`, `AdaGrad`, `CKY`), and dense embeddings place `Adam` near
+`RMSProp`. RRF vs weighted is a genuine tie (twice failed significance); RRF wins on
+having no free parameter.
 
 ### Reranking — D6 · [full report](reports/04d_reranking.md)
 
@@ -136,17 +152,69 @@ The three worst types are precisely those needing evidence from **multiple
 passages**. That is the measured case for the multi-hop control flow in Phase
 6 — not an assumption.
 
-### Generation (Phase 5)
+### Generation (Phase 5) · [report](reports/05_generators.md)
 
-| Model | Faithfulness | Answer Relevancy | tok/s | RAM |
-|---|---|---|---|---|
-| *pending* | — | — | — | — |
+| Model | usable | faithfulness | cites dumped up front | p50 latency |
+|---|---:|---:|---:|---:|
+| **gpt-oss:20b-cloud** ✅ | 0.76 | **0.87**¹ | **0/36** | **6.6 s** |
+| llama3.2:3b | **1.00** | 0.70 | 37/48 | 61 s |
+| phi4-mini | 0.68 | 0.55 | 19/35 | 73 s |
+| qwen3:4b | **0.00** | — | — | ~330 s |
 
-### RAG control-flow ablation (Phase 6)
+Each measurement layer changed who looked best. `grounded_rate` rated qwen3:4b perfect —
+it was 14 truncated reasoning monologues that "cited" `[S1]`. `usable` rated llama3.2:3b
+perfect — until the faithfulness judge found 29% of its answers carried an unsupported
+citation, and a regex (no judge) showed why: it prepends every source tag instead of
+attaching each to its claim. ¹ Judged by gpt-oss:120b — **same family**, hence Phase 8's
+required judge validation.
 
-| Configuration | Correctness | Faithfulness | LLM calls | Latency |
-|---|---|---|---|---|
-| *pending* | — | — | — | — |
+### RAG control flow (Phase 6)
+
+| Configuration | recall@10 | multi-passage recall | usable |
+|---|---:|---:|---:|
+| **baseline** (retrieve → generate) | **0.854** | **0.714** | **0.80** |
+| + decompose (llama3.2:1b) | 0.726 | 0.488 | 0.74 |
+| + decompose (llama3.2:3b) | 0.722 | — | 0.76 |
+| + decompose (3b) + keep original | 0.774 | 0.655 | 0.72 |
+| + CRAG (grade top 5, rewrite once) | 0.854 | 0.714 | 0.76 |
+
+**CRAG had no effect** (0W/0L/48T on recall): its grader marked all five passages
+irrelevant on 18 questions whose retrieval was already perfect — probably because it sees
+only the first 400 characters of each chunk. Fusing the rewrite with the original query,
+rather than replacing it, is why those needless rewrites cost latency but no recall.
+
+**Decomposition is a negative result.** Both small models split 49/50 questions,
+ignoring the rule to leave single-topic ones whole; the 1B also swapped topics ("Markov
+blanket" → "Markov chain") and invented entities.
+
+| Memory | turn-2 recall@10 on pronoun follow-ups |
+|---|---:|
+| off | 0.083 |
+| **on** (history-aware condensation) | **0.917** |
+
+### Guardrails (Phase 7) · [report](reports/07_guardrails.md)
+
+Deterministic by design. Injection: **10/10 caught, 0 false positives** on 300 real
+questions. Scope (similarity to the corpus, threshold calibrated on data): blocks **0/50**
+golden and 2/250 held-out questions, catches 15/20 off-topic prompts — the rest are
+declined by the answer prompt's `NOT_IN_SOURCES` rule.
+
+## Skipped or deferred — and why
+
+| Item | Status | Why |
+|---|---|---|
+| **Decomposition / multi-hop** | rejected | 3 configs, all below baseline (above) |
+| **CRAG** | built, not enabled | no gain (above); one config line turns it on |
+| **Adaptive router** | deferred | depends on a small model deciding "does this question need X?" — the exact judgement both small models failed 100% of the time for decomposition |
+| **Self-RAG answer grading** | deferred | its cheap form is already live: `citations.py` verifies every `[S<n>]` and the API flags fabrications |
+| **Reranker** | rejected | +4.2 recall@1 inside the noise band, 1–6 s/query on CPU |
+| **HyDE / query expansion** | skipped | small models drifted when rewriting; not worth a third rewrite experiment |
+| **Toxicity guard** | gap | `llama-guard3:1b` failed to download (IPv6); not substituted |
+| **PII via Presidio** | substituted | regex for email/phone/card; misses names and addresses |
+| **Token streaming** | deferred | answers arrive whole (~7 s); UI shows a spinner |
+| **LangSmith tracing** | optional | needs an API key; the graph `trace` field shows each turn's path |
+| **Fine-tuning (Phase 10)** | deferred | retrieval recall@10 is already 0.964 on the synthetic set; the plan says fine-tune only if justified |
+| **gemma3:4b** | unavailable | pull failed (IPv6); three other local generators compared |
 
 ---
 
@@ -254,18 +322,15 @@ regressions stay visible across the project's history.
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate                     # Windows
-pip install -r requirements/base.txt       # phases 0-3; heavier layers added per phase
+.venv\Scripts\activate
+pip install -r requirements/base.txt -r requirements/retrieval.txt
+pip install -r requirements/graph.txt -r requirements/serve.txt
+python -m src.ingest.pipeline                 # parse + chunk data/raw/*.pdf
+python -m evaluation.retrieval_lab --embed-only   # or the Colab notebook
 ```
 
-Place the PDFs in `data/raw/`. Then:
-
-```bash
-python -m src.ingest.parse_bench           # Phase 1: parser comparison
-```
-
-Requires [Ollama](https://ollama.com) for local models. Cloud models need `ollama signin`
-and a **`:cloud`** tag suffix.
+Cloud models need `ollama signin` and a **`:cloud`** tag suffix. Only the `gpt-oss`
+family is on the free tier.
 
 ---
 

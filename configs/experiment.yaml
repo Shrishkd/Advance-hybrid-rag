@@ -170,27 +170,40 @@ transform:
 # retrieval core. One LangGraph, toggleable nodes, measured by ablation.
 # ───────────────────────────────────────────────────────────────────────
 graph:
-  type: naive                  # [UNTESTED] naive | crag | self_rag | adaptive
-  grader_role: tiny            # graders stay LOCAL - cost control
-  max_retries: 2               # cycle guard: without this, self-correction loops forever
+  # Nodes ADDED to the served graph, each only after an ablation shows it helps.
+  # `memory` is always on when serving (src/serve/api.py), so it is not listed.
+  nodes: []                    # [PROVEN-PARTIAL] D8, reports/06_*.md
+  #   memory     ADOPTED   turn-2 recall 0.083 -> 0.917 (06_memory.md)
+  #   decompose  REJECTED  3 configs, all below baseline 0.854 (06_decompose*.md)
+  #   crag       NOT ADOPTED - recall 0.854 -> 0.854, usable -0.04 (06_crag.md)
+  transform_model: llama3.2:3b # local query-side nodes. 1B invented entities.
+  condense_model: null         # null = the generator. Condensation decides what
+                               # the whole turn is about; small models drifted.
   crag:
-    relevance_threshold: 0.5
-    fallback_on_fail: rewrite  # rewrite | broaden | refuse
-  self_rag:
-    check_groundedness: true
-    check_answer_relevance: true
-  multihop:
-    max_hops: 3
+    # Implemented in src/graph/crag.py. The planned `relevance_threshold: 0.5`
+    # became "at least ONE of the top 5 relevant" - one good passage is enough
+    # for a generator that reads 10, and a noisy small grader makes a high bar
+    # trigger needless rewrites. Rewrite ONCE, never refuse at the router.
+    grade_top: 5
+    max_rewrites: 1
 
 # ───────────────────────────────────────────────────────────────────────
 # GENERATION                                  decided in Phase 5
 # ───────────────────────────────────────────────────────────────────────
 generation:
-  model_role: llama3.2-3b      # [UNTESTED] key in models.yaml 'generators', or cloud
+  model_role: gpt-oss:20b-cloud # [PROVEN] reports/05_generators.md (D9)
+                               # Faithfulness 0.87 (llama 0.70), citations attached to
+                               # claims 36/36 (llama dumps 77%), 6.6 s vs 61 s.
+                               # JUDGE IS SAME FAMILY -> Phase 8 hand-label validation
+                               # of the judge is REQUIRED, not optional.
   temperature: 0.0             # deterministic: required for reproducible evals
   max_tokens: 1024
   require_citations: true      # answers must cite book/chapter/page
-  context_budget_tokens: 6000
+  top_n: 10                    # [PROVEN-DIRECTIONAL] reports/05b_context_budget.md
+  context_budget_tokens: 5300   # wrong refusals 5 -> 2 vs top_n=6, faithfulness
+                                # unchanged. Not significant; chosen on a mechanism
+                                # that replicates across 4 configs. Coupled to D9:
+                                # cheap on a cloud generator, NOT on local CPU.
 
 # ───────────────────────────────────────────────────────────────────────
 # MEMORY                                      decided in Phase 6

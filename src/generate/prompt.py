@@ -35,7 +35,8 @@ REQUIRED = ("{context}", "{question}")
 REFUSAL_TOKEN = "NOT_IN_SOURCES"
 
 
-def load_template(name: str = "answer_v0") -> str:
+def load_template(name: str = "answer_v0",
+                  required: tuple[str, ...] = REQUIRED) -> str:
     """Read a prompt template, stripping its comment header.
 
     Raises if a required placeholder is missing. That check is worth having:
@@ -52,7 +53,7 @@ def load_template(name: str = "answer_v0") -> str:
         if not line.lstrip().startswith("#")
     ).strip()
 
-    missing = [p for p in REQUIRED if p not in body]
+    missing = [p for p in required if p not in body]
     if missing:
         raise ValueError(f"{path} is missing placeholder(s): {missing}")
     return body
@@ -87,3 +88,55 @@ def is_refusal(answer: str) -> bool:
     False
     """
     return REFUSAL_TOKEN.lower() in answer.lower()
+
+
+# Phrases a model uses when narrating its own reasoning rather than answering.
+# Observed verbatim from qwen3:4b, which reasons regardless of think=False or
+# /no_think and returns the trace UNTAGGED inside the answer, e.g.
+#   "We are given a single source [S1]... We are to cite [S1]..."
+#   "Hmm, the user is asking about..."
+_REASONING_OPENERS = (
+    # From the diagnostic prompt (2026-09-21):
+    "we are given", "we are asked", "we need to", "we are to",
+    "hmm", "okay, let", "okay, so", "alright, let",
+    "the user is asking", "the user wants", "<think>",
+    # From qwen3:4b under the REAL answer_v0 prompt - the first version of this
+    # list missed all 14 of these, because it was built from the diagnostic
+    # prompt's phrasing. First person, not first person plural:
+    #   "I need to answer the question about..."
+    #   "Let me carefully review the sources..."
+    #   "Let me analyze the question and the sources..."
+    "i need to", "i must", "i should", "i'll ", "i will ",
+    "let me", "let's ", "first, i", "first, let",
+)
+
+
+def leaked_reasoning(answer: str) -> bool:
+    """Does the answer open by narrating its own reasoning?
+
+    WHY THIS CHECK EXISTS
+    ---------------------
+    The citation verifier asks "does every [S<n>] resolve?". A leaked
+    reasoning trace passes that test: "We are to cite [S1]" cites S1. So a
+    model that dumps its monologue into the answer scores as GROUNDED while
+    producing something no user should see. Citation integrity and format
+    integrity are different properties and need different checks.
+
+    This is a HEURISTIC on the opening words, not a classifier. It will miss a
+    trace that opens unusually and could flag a legitimate answer that happens
+    to start "We need to..." - so it is reported as its own column, never
+    folded silently into `grounded`.
+
+    >>> leaked_reasoning("We are given a single source [S1]. The question asks...")
+    True
+    >>> leaked_reasoning("Hmm, the user is asking about regularization.")
+    True
+    >>> leaked_reasoning("I need to answer the question about Levenshtein.")
+    True
+    >>> leaked_reasoning("Let me carefully review the sources to find it.")
+    True
+    >>> leaked_reasoning("Regularization penalises large weights [S1].")
+    False
+    """
+    head = answer.lstrip().lower()[:60]
+    return any(head.startswith(o) for o in _REASONING_OPENERS)

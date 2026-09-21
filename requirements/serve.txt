@@ -1,0 +1,11 @@
+# Phase 9 — the chatbot.
+#
+# FastAPI serves the graph; Streamlit is the UI. They are SEPARATE processes on
+# purpose: the evaluation harness calls the same /chat endpoint the UI does, so a
+# benchmark score describes exactly what a user gets - not a library call that
+# the app might wrap differently.
+#
+# RAM: negligible beyond the models already loaded by Ollama.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+streamlit==1.41.1

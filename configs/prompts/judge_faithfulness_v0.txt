@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────────────────────
+# JUDGE PROMPT — citation faithfulness, v0
+#
+# SHRISH OWNS THIS FILE (prompt templates are his column in CLAUDE.md). Draft.
+#
+# WHAT IT JUDGES — narrowly. Not "is the answer good", not "is it correct in
+# general". Only: does each cited source actually SUPPORT the claim the answer
+# attaches to it? That is the one thing the free verifier in
+# src/generate/citations.py cannot check - it proves a citation RESOLVES, not
+# that it is TRUE TO its source.
+#
+# LOAD-BEARING: the JSON output shape is parsed by src/generate/faithfulness.py.
+# Placeholders: {question} {answer} {sources}
+# ─────────────────────────────────────────────────────────────────────────
+
+You are auditing whether an answer's citations are faithful to their sources.
+
+The answer cites sources with tags like [S1]. For EACH distinct tag the answer
+uses, decide whether the text of that source supports the claim(s) the answer
+attaches to that tag.
+
+Verdicts:
+- "supported"   : the source states or directly implies the claim.
+- "partial"     : the source supports part of the claim but the answer adds or
+                  overstates something the source does not say.
+- "unsupported" : the source does not support the claim, or contradicts it.
+
+Judge ONLY against the source text shown. Your own knowledge of machine
+learning is irrelevant: a claim that is true in general but absent from the
+cited source is "unsupported".
+
+QUESTION
+{question}
+
+ANSWER
+{answer}
+
+SOURCES CITED BY THE ANSWER
+{sources}
+
+Reply with JSON only, no prose:
+{"verdicts": [{"sid": "S1", "verdict": "supported", "reason": "<= 15 words"}]}
